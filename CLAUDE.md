@@ -619,7 +619,11 @@ anything git-backed, `git fetch` first: reading a local clone and reporting it a
 with a longer fuse. **And before hand-rolling a parser for a probe, check whether the code
 already has one**: a bespoke parser silently narrows the population it can see.
 
-*9 lines of evidence for this rule are in `conventions/agent-operations.md`.*
+**A host that times out from one machine is not blocked until the local link is ruled out**:
+ping the gateway (`ping -c 30 -i 0.2 <gateway>`) and try a second machine. A lossy link passes
+short exchanges and kills long ones, which mimics a selective block.
+
+*15 lines of evidence for this rule are in `conventions/agent-operations.md`.*
 
 ### A share is not robust to an unresolved definition until you measure the spread
 
@@ -659,7 +663,7 @@ check is almost always to read the thing the prose describes.
   keeps finding them, list every quantified or inherited claim with a measured verdict
   (`code-check.md`, "A guard's scope, escape hatches, and remedies").
 
-*91 lines of evidence for this rule are in `conventions/agent-operations.md`.*
+*93 lines of evidence for this rule are in `conventions/agent-operations.md`.*
 
 ### "It can only be answered by testing" is a claim with an author
 
@@ -886,7 +890,7 @@ workaround", applied to a *broken* dependency.
 repro and the exact lines, report it, and carry on if it is not blocking. The rule is
 *do not hide it*, not *do not continue*.
 
-*5 lines of evidence for this rule are in `conventions/agent-operations.md`.*
+*10 lines of evidence for this rule are in `conventions/agent-operations.md`.*
 
 
 # Cartography
@@ -1233,6 +1237,12 @@ Put a session-wide guard in the repository's root `conftest.py`, and pin it by b
 ### `mkdocs build --strict -q` passes a dead link
 Run `mkdocs build --strict` without `-q`, and set all seven `validation:` keys to `warn` in `mkdocs.yml`: `-q` raises the log level past WARNING, strict counts only the warnings it sees, and so it counts nothing.
 
+### `tempfile.mkstemp` then `os.replace` leaves the target at mode 0600
+Set the temp file's mode before the rename: the target's own (`os.stat(path).st_mode & 0o7777`) when it exists, `0o666 & ~umask` when it does not.
+
+### A line break inside an f-string's braces parses only on Python 3.12+
+Parse or test a script under its declared `requires-python` floor (`uv run --python 3.11 --script …`): PEP 701 (3.12) allows a newline inside an f-string's braces, so code that passes on 3.12 can be a SyntaxError on 3.11.
+
 # Code Check — R
 Traps in R: the language and base/utils behaviour, package internals (`R CMD build`, `.Rbuildignore`, roxygen, lintr, `data-raw/`, testthat, pak), and the DBI/duckdb/arrow data layer.
 
@@ -1257,10 +1267,10 @@ A script that reads a file, transforms it, and writes it **back to the same path
 `xml2::xml_find_first()` returns an `xml_missing` object when nothing matches — not `NULL`, not an error.
 
 ### `download.file(quiet = TRUE)` never tells you the HTTP status — read it from `curl`
-Read an HTTP status from `curl::curl_fetch_disk()`'s `status_code`, never from `download.file()` messages, whose first warning unwinds a `tryCatch` before the status arrives and whose quiet error omits it.
+Read an HTTP status from `curl::curl_fetch_disk()`'s `status_code`, never from `download.file()` messages.
 
 ### A URL handed to a reader goes through R's 60 s connection timeout
-Download a large remote file to a `tempfile()` with httr2 or curl and read the copy, never `jsonlite::fromJSON(url)`, `readRDS(url(u))` or `read.csv(u)`: those read through an R URL connection, which stops at `getOption("timeout")` (60 s by default) however fast the bytes are arriving.
+Download a large remote file to a `tempfile()` with httr2 or curl and read the copy, never `jsonlite::fromJSON(url)`, `readRDS(url(u))` or `read.csv(u)`.
 
 ### `on.exit()` at a script's top level never fires
 - `on.exit()` registers a handler on the *current frame*.
@@ -1278,7 +1288,7 @@ A lint warning of `no visible binding` for a constant added on this branch is us
 `expect_snapshot()` **skips on CRAN**, and `testthat` treats a non-interactive run as CRAN by default.
 
 ### testthat counts an uncaught error under `error`, not `failed`
-Count `r$failed > 0 | r$error` over `r <- as.data.frame(testthat::test_file(f))`, never `failed` alone: a restored defect that raises instead of failing an expectation scores zero failures, so a guard that fired reads as one that never did.
+Count `r$failed > 0 | r$error` over `r <- as.data.frame(testthat::test_file(f))`, never `failed` alone.
 
 ### A `skip_if_not()` skips only its own `test_that()` block
 Before blaming a failure, or its absence, on a skip, find the `test_that()` block the skip sits in.
@@ -1343,8 +1353,8 @@ Construct instants explicitly: a `Date` always becomes UTC midnight whatever `tz
 ### A `for` loop that builds `aes()` captures the loop variable lazily
 `aes()` quotes its arguments, so `aes(fill = lab[i])` is not evaluated until the plot is drawn — by which time `i` holds its **last** value.
 
-### ggplot2: forcing a legend key for an unused factor level
-Keep `drop = FALSE` on the scale and give the layer a named `show.legend` that also sets `FALSE` for each other legend: `drop = FALSE` alone lists the unused level with no glyph, and `show.legend = TRUE` stamps the layer's glyph into every other legend.
+### ggplot2 legends and labels: a key for an unused factor level, and ggrepel labels that must avoid each other
+Keep `drop = FALSE` on the scale and give the layer a named `show.legend` that also sets `FALSE` for each other legend.
 
 ### `paste()` with a zero-length argument returns length ONE, not zero
 `paste0("x", character(0))` is `"x"`, so a key built per element gains one phantom member when the vector is empty; guard the empty case before building keys.
@@ -1416,7 +1426,7 @@ Scan R source for non-ASCII the way `R CMD check` does (`tools:::.check_package_
 A `warning =` handler is not a filter — it replaces the whole expression, so a call that **succeeded** and merely warned returns the handler's value and the result is thrown away.
 
 ### Do not abort inside a handler for a warning raised from C++; note it and abort after the call returns
-Record a flag in the `withCallingHandlers()` handler, `invokeRestart("muffleWarning")`, and raise once the call has returned: for a warning from `Rcpp::warning()`, an abort from inside the handler longjmps through the C++ frames and skips their destructors.
+Record a flag in the `withCallingHandlers()` handler, `invokeRestart("muffleWarning")`, and raise once the call has returned.
 
 ### `match()` treats NA as a matchable VALUE, so two unknowns join to each other
 `match(NA, c("1", NA))` is **2**.
@@ -1466,8 +1476,8 @@ R removes its session `tempdir()` on exit, including after `stop()`.
 ### testthat's failure snapshots land in `tests/` and ride in on `git add -A`
 testthat 3e writes `tests/testthat/_problems/*.R` and `tests/testthat/testthat-problems.rds` when tests fail.
 
-### A pick whose `ORDER BY` ends on a key that is not unique in the group returns an arbitrary row
-`DISTINCT ON (k) … ORDER BY k, a, b` is deterministic only if `(a, b)` is unique within each `k`.
+### Postgres row order is never fixed unless the query fixes it, so a pick, a float sum and a presence check can each depend on it
+End every `ORDER BY` on a unique key, order any fetch whose rows are summed, and ask whether a value is loaded with an index walk, not `DISTINCT` or `EXISTS`.
 
 ### `sprintf("%g", x)` writes `Inf` and `NA` into SQL as bare words, which Postgres reads as column names
 A numeric formatter such as `sprintf("%.10g", x)` has no SQL form for non-finite values.
@@ -1527,7 +1537,7 @@ Read a TSV you wrote unquoted with `quote = "", na.strings = character(), commen
 Run `LOAD icu` on the connection before any query that needs it (`epoch()`, `year()`, a cast to `DATE` on a `TIMESTAMPTZ`), or use a function that needs no extension (`epoch_ms()`).
 
 ### `fs::path()` collapses the `//` after a URL scheme, so it cannot build URLs
-Join a URL with `paste(base, key, sep = "/")` or `file.path()`, never `fs::path()`: `fs::path("https://x.ca/b", "k.tif")` is `"https:/x.ca/b/k.tif"`, because fs normalises the doubled separator, and the result is not a valid URL.
+Join a URL with `paste(base, key, sep = "/")` or `file.path()`, never `fs::path()`.
 
 ### R's default curl user-agent fails on canada.ca, and the error names HTTP/2, not the agent
 Set a user-agent on every R fetch of a `canada.ca` page, because R's default fails there with an HTTP/2 error that never mentions the agent.
@@ -1554,7 +1564,7 @@ Move a directory into place with `base::file.rename()` and check its return valu
 Read an inode with `fs::file_info(x)$inode`.
 
 ### `cffr::cff_create()` writes a CRAN DOI for any package that shares a name with a CRAN package
-Drop the generated DOI (`x$doi <- NULL`) unless it is your own, and supply your own through `keys = list(doi = ...)`, because cffr assigns `10.32614/CRAN.package.<name>` whenever CRAN carries a package of that name, whatever your package is.
+Drop the generated DOI (`x$doi <- NULL`) unless it is your own, and supply your own through `keys = list(doi = ...)`.
 
 ### A `{python}` chunk needs reticulate even with `eval = FALSE`
 Set `python.reticulate = FALSE` on a Python chunk that only displays code, or declare reticulate.
@@ -1567,6 +1577,9 @@ Keep every `$ref` alone in a draft-07 schema tested with jsonvalidate and read b
 
 ### `load_all()` runs every `.R` file at the top of a package's `data/` as a data script
 Keep helper and ad hoc scripts out of `data/`, which pkgload treats as package data, so `load_all()` sources any `data/*.R` it finds there.
+
+### `ifelse()` with an all-NA test returns a logical vector, whatever `yes` and `no` are
+Resolve NA before an `ifelse()` whose result must keep a type (`blocked <- !is.na(blocked) & blocked`), or use `dplyr::if_else(..., missing = )`.
 
 # Code Check — Shell
 Tool-level traps in bash, sed, git and `gh`, and in the host toolchain those commands depend on.
@@ -1732,7 +1745,7 @@ Write `cd "$D" || exit 1` (or `cd "$D" && …`), never `cd "$D"; …`: without t
 ### macOS `/bin/bash` 3.2 quote-matches a heredoc inside `$( )`, so an apostrophe in the body is a syntax error
 Pass multi-line text through a file (`--body-file`, `-F`) rather than `"$(cat <<'EOF' … EOF)"`: bash 3.2 scans the command substitution for balanced quotes before it sees the heredoc, so `it's` in a quoted heredoc body fails with ``unexpected EOF while looking for matching `''``, while …`
 
-### A skill's bash blocks run as separate calls, so each block must check the state the last one left
+### A skill's bash blocks run as separate calls, and its `$` + digits are replaced by its arguments
 Open every block after the first with guards on what it inherits: re-set its variables, confirm the path is the expected tree, and refuse edits or commits the previous block did not check.
 
 ### An apostrophe in a `${VAR:?message}` inside double quotes is an unterminated quote
@@ -1785,8 +1798,8 @@ terra, sf, bcdata, GDAL/OGR CLIs.
 ### bcdata: an empty result raises AttributeError, it does not return an empty collection
 - A bbox query matching nothing exits non-zero with `AttributeError: You are calling a geospatial method on the GeoDataFrame, but the active geometry column to use has not been set.` — geopandas complaining about an empty frame, several layers below the query.
 
-### bcdata: `BBOX()` rejecting a bbox that is a length-4 numeric vector — seen once, unquoting fixed it
-If `bcdata::BBOX()` rejects a length-4 numeric bbox as not a length-4 numeric vector, try unquoting it with `!!`; this was seen once and the mechanism is not established.
+### bcdata: `filter()` translates the calls inside it, so build strings, value lists and transforms before the query
+Compute any query string, value list or transformed geometry into a variable before `bcdata::filter()`, or wrap the call in `local()`.
 
 ### terra: operator dispatch and edge cases in package code
 - **SpatRaster `%in%` is not dispatched when terra is *imported* (only when *attached*).**
@@ -1870,7 +1883,7 @@ Two contracts inside `terra::app()` that read as the opposite of what they are, 
 Three measured facts about raster **container** metadata, all of which fail quietly (floodplains#83, 2026-09-05, terra 1.9.34 / GDAL 3.8.5).
 
 ### terra `metags<-` merges into the tags a raster already has, and its setters work only from 1.8-54
-To replace a raster's dataset tags, clear them first (`metags(x) <- NULL`, only when there are any) and then set, and require `terra (>= 1.8-54)`: `metags<-` merges, so a stale tag read from a published file survives a write that sets new ones.
+To replace a raster's dataset tags, clear them first (`metags(x) <- NULL`, only when there are any) and then set, and require `terra (>= 1.8-54)`.
 
 ### `ggmap`: a fixed `zoom` silently crops points off the basemap, and `calc_zoom()` does not fix it
 `ggmap::get_map()` fetches ONE fixed-size image at whatever `zoom` it is given.
@@ -1900,7 +1913,7 @@ GDAL has two KML drivers and picks `KML` by default, which does not read the `<S
 Two ways of saying "these pixels are not data" reach `gdalwarp` independently, and giving it both is not an error — it is an instruction to do both.
 
 ### Check an alpha-masked raster by its mask flags, not its colorinterp
-Assert that rasterio's `ds.mask_flag_enums` is `[per_dataset, alpha]` on every image band, as an absolute check: `colorinterp[-1] == alpha` is a proxy, and a guard comparing output to source cannot see a NoData that overrides the alpha when both carry it.
+Assert that rasterio's `ds.mask_flag_enums` is `[per_dataset, alpha]` on every image band, as an absolute check.
 
 ### `parallel::mclapply()` over a remote raster aborts every fork on macOS, and the wrapper exits 0
 GDAL's curl handles do not survive a fork.
@@ -1921,7 +1934,7 @@ Reaching for it to answer "how far is each data cell from the nearest nodata" gi
 Before comparing a rendered shape against a raster, get the raster's valid-data window, not its bbox.
 
 ### `sf::gdal_utils()` does not raise when GDAL cannot open the source
-Test the result before parsing it: `gdal_utils("info", ...)` on a source GDAL cannot open - an unreachable url, a missing key - **warns and returns `character(0)` or `NA`**, and the next `jsonlite::fromJSON()` dies with *"invalid char in json text"*, which names nothing about the cause.
+Test the result for `character(0)` or `NA` before parsing it.
 
 ### A shift measured on one grid is wrong when applied on another
 Apply a displacement in the CRS it was measured in: transform the point there, add the shift, transform back.
@@ -1935,8 +1948,8 @@ It reports the verdict in text and returns success either way, so the exit statu
 ### `terra::rast()` on a SpatRaster returns an empty template, not a copy
 Pass a SpatRaster through as is (`if (inherits(x, "SpatRaster")) x else terra::rast(x)`): `rast(x)` on one returns a template with the same geometry and **no values**.
 
-### `terra::rasterize(filename = , datatype = <integer>)` writes the background as 0, not NA
-Rasterise in memory and then `writeRaster(datatype = …)`: written directly through `filename` with an integer `datatype` (INT1U, INT2S), cells no polygon covers come out as 0, while the file's NoData is 255, so they read back as data (terra 1.9.46 and 1.9.50; rspatial/terra#2195).
+### terra integer rasters: `rasterize(filename =)` writes the background as 0, and `project()` keeps NoData as data
+Rasterise in memory and then `writeRaster(datatype = …)`, and cast an integer raster to float (`x * 1`) before `terra::project()`.
 
 ### GDAL's `average` warp across a rotated CRS weights the wrong pixels; average in the target CRS instead
 To take class fractions or means from a fine grid in one CRS onto a coarse grid in another, resample nearest onto a grid aligned with the target and `fact` times finer (`terra::disagg(terra::rast(target), fact)`), then `terra::aggregate(fact, mean)`.
@@ -1951,7 +1964,7 @@ Query a large AOI by its convex hull, re-sign items before each tile, and give `
 Read the `chunk_status` variable of every `write_ncdf()` output with ncdf4 and abort on any value other than 0 or the netCDF int fill, and abort after the call returns on the R warning `could not be added to output`.
 
 ### `gdalcubes::cube_view()` reads an aggregation or resampling it does not know as a default, with no error
-Validate `aggregation` and `resampling` against sets measured by round-tripping each value through `cube_view()`, not against `?cube_view`: an unknown aggregation silently becomes `"none"` and an unknown resampling `"near"`.
+Validate `aggregation` and `resampling` against sets measured by round-tripping each value through `cube_view()`, not against `?cube_view`.
 
 ### terra reads a multi-variable gdalcubes NetCDF with its variables in alphabetical order
 Select layers by name after `terra::rast()` of a `gdalcubes::write_ncdf()` output, never by position.
@@ -1966,7 +1979,7 @@ Read with `promote_to_multi = FALSE` whenever a layer will be written back.
 Run it on the invalid rows only (`!st_is_valid(x)`), or keep the original geometry and use the made-valid copy just for the computation.
 
 ### `st_union()` fails after `st_transform()` of a source mixing XY and XYZ rings
-Drop Z with `sf::st_zm()` before any `st_union()` or `st_combine()` on data that may mix XY and XYZ rings and has been through `st_transform()`: the union fails *"Points of LinearRing do not form a closed linestring"*, and `st_make_valid()` fails the same way.
+Drop Z with `sf::st_zm()` before any `st_union()` or `st_combine()` on data that may mix XY and XYZ rings and has been through `st_transform()`.
 
 ### terra: `unique()` and `freq()` on a factor return its labels, not its codes
 Read a factor raster's codes from a copy with its levels stripped (`levels(y) <- NULL`), never from `terra::unique(x)[, 1]` or `terra::freq(x)$value`, which on a factor return the active category's labels.
@@ -1993,7 +2006,7 @@ To tell a throttle from any other bcdata failure, record the status off the requ
 Check `sf::sf_extSoftVersion()[["GDAL"]]` and `terra::gdal()` before concluding that "GDAL" cannot read something: one R session can hold two GDALs, and a driver or codec missing from one may be present in the other.
 
 ### `arrow::write_parquet()` of a geoarrow table is not GeoParquet
-Write GeoParquet with GDAL's Parquet driver (`ogr2ogr -f Parquet`), and check the file's schema metadata carries a `geo` key: `geoarrow` (0.4.4) with `arrow::write_parquet()` writes geoarrow-native columns and no `geo` key, so GDAL reads the file with no CRS.
+Write GeoParquet with GDAL's Parquet driver (`ogr2ogr -f Parquet`), and check the file's schema metadata carries a `geo` key.
 
 ### `atan2(0, 0)` is 0, so two points at one place have a bearing of due north
 Treat a zero-length step as having no heading: test the step length before taking its azimuth, and return `NA` rather than a bearing when it is 0, because `atan2(0, 0)` returns 0 with no warning, and that reads as north.
@@ -2005,10 +2018,10 @@ Delete the output before re-warping to the same path (`unlink(out)` before `sf::
 Before retrying a `/vsicurl/` read in the same process, set `CPL_VSIL_CURL_NON_CACHED` to the URL's prefix.
 
 ### THREDDS NCSS returns one time step unless the request says `temporal=all`
-Add `&temporal=all` (or an explicit `time_start`/`time_end`) to every NetCDF Subset Service grid request: without it NCSS answers with a single time step (the one nearest "now"), a valid NetCDF that passes a signature check, so assert the layer count after reading.
+Add `&temporal=all` (or an explicit `time_start`/`time_end`) to every NetCDF Subset Service grid request.
 
 ### BC's water rights licence view repeats a row per licensee, so deduplicate before summing quantities
-Keep one row per licence, purpose, point of diversion, `QUANTITY_FLAG` and units before summing `QUANTITY` from `WHSE_WATER_MANAGEMENT.WLS_WATER_RIGHTS_LICENCES_SV`: the view carries a row per licensee, identical but for `OBJECTID` and `WLS_WRL_SYSID`.
+Keep one row per licence, purpose, point of diversion, `QUANTITY_FLAG` and units before summing `QUANTITY` from `WHSE_WATER_MANAGEMENT.WLS_WATER_RIGHTS_LICENCES_SV`.
 
 ### QGIS cannot draw Esri Wayback, and a Wayback release date is not a capture date
 Fetch Wayback imagery with GDAL or curl into a local raster, choosing the release by its **capture** date (from the release's `metadataLayerUrl`), never by its release date.
@@ -2026,13 +2039,13 @@ Pad a label slice by half a cell (`sel(latitude=slice(60.05, 47.95))`, not `slic
 Take per-feature cell membership from `terra::cells(r, terra::vect(x), touches = FALSE)`, which returns an `ID` (row of `x`) and `cell` for exactly the cells `rasterize(touches = FALSE)` burns.
 
 ### A Freshwater Atlas main stem's downstream end lies on the receiving river's centreline, not at the confluence
-Do not use the `DOWNSTREAM_ROUTE_MEASURE = 0` point of a tributary's main stem as its mouth on the ground: the atlas routes the stem through the receiving river's polygon to that river's centreline, so the point sits mid-river.
+Do not use the `DOWNSTREAM_ROUTE_MEASURE = 0` point of a tributary's main stem as its mouth on the ground.
 
-### `terra::project()` given only a CRS lets GDAL choose the grid, and GDAL versions choose differently
-Pass `terra::project()` a template grid, not just a CRS, when the result must reproduce on another machine: GDAL picks the grid itself, and its pick changed between GDAL 3.8.5 and 3.13.0.
+### `terra::project()` given only a CRS lets GDAL and PROJ choose the grid and the datum step, and their choices move between versions
+Pass `terra::project()` a template grid, and between east/north NAD83 CRSs a pinned `pipeline`, when a reprojection must reproduce.
 
 ### pystac `Collection.add_item()` rewrites the item's self href and fetches the root over the network
-Re-set the item's self href after `add_item()`, and call `collection.set_root(collection)` once its self href is set: the default layout rewrites the href to `<collection dir>/<id>/<id>.json`, and a root link naming a published URL is resolved by downloading it.
+Re-set the item's self href after `add_item()`, and call `collection.set_root(collection)` once its self href is set.
 
 ### `pdist::pdist()` loses centimetres at projected coordinates
 Subtract a local origin before `pdist::pdist()`: at BC Albers magnitudes it returns 0 for points up to 7 cm apart.
@@ -2045,6 +2058,15 @@ Select main flow with `edge_type IN (1000, 1050, 1200, 1250, 1450)`, and test wh
 
 ### terra: `focal(na.rm = TRUE)` drops NA cells from the vote, so where you fill NA around a filter changes its output
 Fill NA with the value you mean (`ifel(is.na(x), 0L, x)`) **before** a `focal()` majority or min/max filter, not after it, whenever those cells should count.
+
+### `terra::plot()` and `plotRGB()` draw at most 500,000 cells, so a large raster's thin features break up
+Pass `maxcell = terra::ncell(r)`, or draw with `rasterImage()` at one cell per device pixel, whenever a figure's point is a thin feature.
+
+### lidR's `rasterize_terrain()` masks every cell beyond the points' hull by default, whatever `extrapolate` says
+Pass `shape = "bbox"` (or a polygon) to `rasterize_terrain()` when the DTM must cover the whole window.
+
+### A plain difference of two DEMs can hide a half-cell shift between them
+Before calling two DEMs the same surface, regress their difference on the reference's gradient, or difference them at each half-cell shift.
 
 # Code Check Conventions
 Structured checklist for reviewing diffs before commit.
