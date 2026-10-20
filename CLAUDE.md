@@ -2,9 +2,9 @@
 
 ## Project Overview: Automated Monthly STAC DEM BC Updates
 
-This project maintains the STAC catalog for BC's LidarBC DEM collection with automated monthly updates: a GitHub Actions workflow (`update.yml` — cron + workflow_dispatch, OIDC to S3) runs change detection and an incremental build, then commits refreshed caches back to main. Performance patterns (parallel processing, pre-validation) were ported from stac_orthophoto_bc.
+This project maintains the STAC catalog for BC's LidarBC DEM collection with automated monthly updates: a GitHub Actions workflow (`update.yml` — cron + workflow_dispatch, OIDC to S3) runs change detection and an incremental build, then commits refreshed caches back to main. Performance patterns (parallel processing, pre-validation) were ported from the orthophoto STAC catalogue.
 
-**Architecture:** GitHub Actions cron → Change detection → Parallel validation/processing → S3 sync → pgstac registration (`stacs register --config stacs.toml --mode drift`, client-side upsert, run from a tailnet machine — CI cannot reach the host)
+**Architecture:** GitHub Actions cron → Change detection → Parallel validation/processing → S3 sync → pgstac registration (`stacs register --config stacs.toml --mode drift`, client-side upsert, run from a machine with access to the host — CI cannot reach it)
 
 **Expected Performance:**
 - First run (full): ~1-1.5 hours (down from 5-6 hours)
@@ -14,7 +14,7 @@ This project maintains the STAC catalog for BC's LidarBC DEM collection with aut
 ### Key Implementation Phases
 
 **Phase 1-2: Modernization ✅ COMPLETE (2026-02)**
-- Port stac_orthophoto_bc performance improvements
+- Port the orthophoto catalogue's performance improvements
 - Pre-validation system with COG detection
 - Parallel item creation using ThreadPoolExecutor
 - Incremental update logic with change detection
@@ -39,7 +39,7 @@ This project maintains the STAC catalog for BC's LidarBC DEM collection with aut
   | STAC collection | `stac-elevation-bc` |
   | S3 bucket | `stac-dem-bc` — **unchanged, deliberately** |
 
-  The bucket is IaC-managed in rtj and appears in all 102,460 item link hrefs, so
+  The bucket is IaC-managed in the infrastructure repo and appears in all 102,460 item link hrefs, so
   renaming it is a separate and larger decision. `tests/test_collection_identity.py`
   asserts that every surviving `stac-dem-bc` under `scripts/` is a bucket URL.
 - **Item ids do not change** — the `-dem-` segment is the source product
@@ -63,7 +63,7 @@ This project maintains the STAC catalog for BC's LidarBC DEM collection with aut
 - Nothing in the routine path deletes — the prior tool DELETEd the collection
   before reloading and took the public API to zero items on 2026-08-29
 - Collection stamped with the STAC Version Extension
-- Remaining: registration from CI needs a tailnet/deploy-key decision in rtj
+- Remaining: registration from CI needs a network-access/deploy-key decision in the infrastructure repo
 
 **Phase 3: Automation ✅ COMPLETE (2026-07, #23)**
 - Landed as the monthly GitHub Actions workflow (`.github/workflows/update.yml`), not the originally-planned VM cron (that VM was never built)
@@ -115,7 +115,7 @@ why the README's worked example renders `dem`-only and says so rather than swapp
 **Key Learning:** Performance is network I/O bound, not CPU bound. Future optimization: local metadata caching (Issue #10).
 
 ### Related Work
-- **stac_orthophoto_bc:** Reference implementation for parallel processing patterns
+- **The orthophoto STAC catalogue:** Reference implementation for parallel processing patterns
 - **stac_uav_bc:** VM deployment patterns and automation functions
 - **Issue #3:** Proper GeoTIFF validation and media type assignment
 - **stacs** (NewGraphEnvironment/stacs#1, formerly #37): registration and verification
@@ -123,7 +123,7 @@ why the README's worked example renders `dem`-only and says so rather than swapp
   `stacs.toml`. Change them there, not here; bump the tag in `environment.yml` and
   `update.yml` together (`tests/test_stacs_config.py` checks both).
 - **Point clouds** go to a separate repo `stac_pointcloud_bc` and bucket
-  `stac-pointcloud-bc` (decided 2026-09-30, rtj#229 revised; bucket rtj#362); it was
+  `stac-pointcloud-bc` (decided 2026-09-30; bucket provisioned in the infrastructure repo); it was
   blocked on stacs#1, which landed as v0.1.0 (2026-10-06). The repo exists (2026-10-07) and #35 moved there as NewGraphEnvironment/stac_pointcloud_bc#1. CHM stays here as a third asset (#47).
 
 ### Data Tracking & Validation System
@@ -217,34 +217,33 @@ Source URLs → GeoTIFF Validation → DSM Pairing → Item Creation → JSON Va
 
 ## Project-Specific Notes
 
-### Registration is client-side here; rtj owns the host
+### Registration is client-side here; the infrastructure repo owns the host
 
 This repo registers the catalogue into pgstac itself (#27), with the `stacs`
 package and this repo's `stacs.toml` (#49) — `stacs verify`, then
-`stacs register --mode drift`. **rtj still owns the host** — its
-provisioning, credentials and runbook live in the private rtj repo
-(`rtj/scripts/geoserv/`, `rtj/RUNBOOK.md`) — but loading a collection is no
-longer something you go there to do.
+`stacs register --mode drift`. **The infrastructure repo still owns the host** — its
+provisioning, credentials and runbook live in that private repo — but loading a
+collection is no longer something you go there to do.
 
-**Read `rtj/RUNBOOK.md` before concluding any infra path is unavailable.** Its
-failure-modes section answers the common ones by name — including which SSH user
-each host accepts, which is not what you would guess. Cost 2026-08-29: a wrong
-username was read as "no access to the host", and a capability gap was reported to
-the user that did not exist. The runbook was on disk the whole time.
+**Read the infrastructure runbook before concluding any infra path is unavailable.**
+Its failure-modes section answers the common ones by name, including access details
+that are not what you would guess. Cost 2026-08-29: a wrong access detail was read as
+"no access to the host", and a capability gap was reported to the user that did not
+exist. The runbook was available the whole time.
 
 **The host address is in this repo deliberately, and that is a change from the
 previous rule here.** What is secret is *access* — the SSH key — not the address.
 `images.a11s.one` resolves to the same machine in public DNS, and `stac_uav_bc`
-has shipped it publicly for months. So the scripts default to the MagicDNS name
-`root@geopro` (in `stacs.toml`) and name the reserved IP as a documented fallback. Key material,
+has shipped it publicly for months. So the scripts default to the host named in
+`stacs.toml`, with a documented fallback address. Key material,
 fingerprints and passwords stay out, as before; `POSTGRES_PASSWORD` is sourced on
 the host and never leaves it, and is passed to pypgstac through the PG*
 environment rather than argv so it does not surface in `ps aux`.
 
 Hazards in the registration path:
 - **Never delete-then-load.** `pgstac.items.collection` is
-  `ON DELETE CASCADE`, so dropping the collection row destroys every item. rtj's
-  `stac_register-pypgstac.sh` does exactly that before reloading, and on
+  `ON DELETE CASCADE`, so dropping the collection row destroys every item. The
+  infrastructure repo's `stac_register-pypgstac.sh` does exactly that before reloading, and on
   2026-08-29 it failed in between and left the public API serving zero items.
   Everything in this repo upserts; the single destructive script
   (`collection_unregister.sh`) requires `--yes` and prints the count first.
@@ -313,7 +312,7 @@ Logs capture: configuration, validation progress, item creation, errors, warning
 
 ### Parallel Processing & Performance Patterns
 
-**Proven from Phase 1-2 (stac_orthophoto_bc + stac_dem_bc):**
+**Proven from Phase 1-2 (the orthophoto catalogue + stac_dem_bc):**
 
 **1. ThreadPoolExecutor for Rasterio Operations**
 ```python
@@ -363,7 +362,7 @@ WHY: Reprocessing same URLs (e.g., after failures, testing) would create duplica
 ### Dependencies
 - Python: pystac, rio_stac, rasterio, rio-cogeo, pandas, tqdm, concurrent.futures (built-in)
 - System: rio CLI tools (rasterio[cogeo])
-- Infrastructure: DigitalOcean VM (stac-prod), S3 (stac-dem-bc), PgSTAC
+- Infrastructure: DigitalOcean VM, S3 (stac-dem-bc), PgSTAC
 
 ### Infrastructure Management
 
@@ -373,19 +372,19 @@ WHY: Reprocessing same URLs (e.g., after failures, testing) would create duplica
 - Server provisioning: Scripts similar to stac_uav_bc setup
 
 **Future Migration (Post-Phase 3):**
-- **rtj repository:** `/Users/airvine/Projects/repo/rtj` (formerly awshak)
+- **Infrastructure repo** (private)
 - OpenTofu/Terraform-based infrastructure management
 - S3 buckets already IaC-managed: `stac-dem-bc` (prod), can easily create `dev-stac-dem-bc` for testing
 - Other managed buckets: imagery-uav-bc, stac-orthophoto-bc, water-temp-bc, backup-imagery-uav
 - Features: versioning, lifecycle policies, CORS, public access controls
 - Reproducible, version-controlled server setups (future)
 
-**Note:** The monthly update runs on GitHub-hosted runners (no VM). S3 buckets and the OIDC role are IaC-managed in rtj; the pgstac host is rtj-provisioned. `geoserv` names the server stack (its containers and `/opt/geoserv`), not a host — the host is the one `stacs.toml` names.
+**Note:** The monthly update runs on GitHub-hosted runners (no VM). S3 buckets, the OIDC role and the pgstac host are provisioned in the infrastructure repo; the host is the one `stacs.toml` names.
 
 ### File Locations
-- **Main repo:** the clone under `~/Projects/repo/`, named `stac_elevation_bc` on a machine whose clone has been moved after #40, `stac_dem_bc` on one that has not. GitHub redirects the old remote either way; only the directory name differs
-- **Infrastructure repo:** `/Users/airvine/Projects/repo/rtj` (formerly awshak; provisions the bucket, OIDC role, and geoserv STAC host)
-- **STAC catalog:** `s3://stac-dem-bc/` is the only complete copy. Local builds write to a scratch workspace via the `STAC_OUTPUT_DIR` env override in `scripts/stac_utils.py` (the old `/Users/airvine/Projects/gis/.../stac/prod` dir is empty/historical)
+- **Main repo:** a local clone, named `stac_elevation_bc` where the clone has been moved after #40, `stac_dem_bc` where it has not. GitHub redirects the old remote either way; only the directory name differs
+- **Infrastructure repo:** private; provisions the bucket, OIDC role, and STAC host
+- **STAC catalog:** `s3://stac-dem-bc/` is the only complete copy. Local builds write to a scratch workspace via the `STAC_OUTPUT_DIR` env override in `scripts/stac_utils.py` (the old local prod directory is empty/historical)
 
 <!-- BEGIN SOUL CONVENTIONS — DO NOT EDIT BELOW THIS LINE -->
 
