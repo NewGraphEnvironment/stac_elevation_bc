@@ -381,6 +381,8 @@ WHY: Reprocessing same URLs (e.g., after failures, testing) would create duplica
 
 **Note:** The monthly update runs on GitHub-hosted runners (no VM). S3 buckets, the OIDC role and the pgstac host are provisioned in the infrastructure repo; the host is the one `stacs.toml` names.
 
+**The OIDC trust names this repo's immutable subject, not its name.** The rename (#40) switched the repo to GitHub's immutable subject format, so `role_gha_stac_dem_bc` trusts `repo:NewGraphEnvironment@46538103/stac_elevation_bc@1022379308:ref:refs/heads/main` (rtj's `sub_claim_prefix`). Before any further rename, read `gh api repos/NewGraphEnvironment/stac_elevation_bc/actions/oidc/customization/sub` and plan the trust change with it; changing only the repo string locked CI out on 2026-10-17 until the prefix was set.
+
 ### File Locations
 - **Main repo:** a local clone, named `stac_elevation_bc` where the clone has been moved after #40, `stac_dem_bc` where it has not. GitHub redirects the old remote either way; only the directory name differs
 - **Infrastructure repo:** private; provisions the bucket, OIDC role, and STAC host
