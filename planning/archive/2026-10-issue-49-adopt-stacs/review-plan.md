@@ -16,7 +16,7 @@ Gap
 - G2: unlisted references — update.yml:15-19, :311; scripts/README :129, :186 prereqs,
   :204, :236 FETCH_JOBS; CLAUDE.md several incl. :121-123 (blocked on stacs#1);
   test_item_migrate docstrings; test_asset_key:208-211 message.
-- G3: host notes (root-only rtj#193, MagicDNS expiry rtj#208, reserved-IP fallback) lived
+- G3: host notes (root-only an internal issue, MagicDNS expiry an internal issue, reserved-IP fallback) lived
   only in collection_register.sh:27-35 and catalogue_register.sh:375.
 - G4: collection_unregister.sh keeps its own STAC_HOST/STAC_DB defaults — untested copy.
 - G5: test_stacs_config locates the console script via sys.executable; call

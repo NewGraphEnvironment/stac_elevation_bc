@@ -122,7 +122,7 @@ git worktree add -b feature/phase1-2-modernization ~/Projects/repo/stac_dem_bc-p
 - Performance improvements: 4-8x speedup for item creation
 - Validation caching: 10-30 min savings
 - Test mode for rapid iteration
-- SRED tracking: NewGraphEnvironment/sred-2025-2026#8
+- SRED tracking: an internal issue
 - Co-authored by Claude Sonnet 4.5
 
 ---
@@ -150,7 +150,7 @@ git worktree add -b feature/phase1-2-modernization ~/Projects/repo/stac_dem_bc-p
 
 **SRED project integration:**
 - Added issues #4 and #5 to "SRED R&D Tracking" project (#8)
-- Commented on NewGraphEnvironment/sred-2025-2026#8 with concrete implementation details
+- Commented on an internal issue with concrete implementation details
 - Linked benchmarking methodology to STAC work
 
 ---

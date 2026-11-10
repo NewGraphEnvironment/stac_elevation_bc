@@ -2,7 +2,7 @@
 
 ## Issue context
 
-Issue #23 (filed 2026-07-18): catalog five months stale (inventory 2026-02-18, S3 build 2026-02-11, pgstac registration 2026-02-13 with 58,019 items). Phase 3 automation from #5 never re-tracked after PR #9's "Closes #5" auto-closed the umbrella. Adopt the water-temp-bc pattern (monthly GHA cron + OIDC, decision record NewGraphEnvironment/water-temp-bc#17, reference workflow `.github/workflows/snapshot.yml`). Companion infra: rtj#184 (`modules/gha_s3_role` consumer). Registration stays manual-on-geoserv for v1; incremental pypgstac upsert is a named follow-up. Out of scope: full rebuilds (rtj#49), source-file deletions, #16 closure.
+Issue #23 (filed 2026-07-18): catalog five months stale (inventory 2026-02-18, S3 build 2026-02-11, pgstac registration 2026-02-13 with 58,019 items). Phase 3 automation from #5 never re-tracked after PR #9's "Closes #5" auto-closed the umbrella. Adopt the water-temp-bc pattern (monthly GHA cron + OIDC, decision record NewGraphEnvironment/water-temp-bc#17, reference workflow `.github/workflows/snapshot.yml`). Companion infra: an internal issue (`modules/gha_s3_role` consumer). Registration stays manual-on-geoserv for v1; incremental pypgstac upsert is a named follow-up. Out of scope: full rebuilds, source-file deletions, #16 closure.
 
 ## Verified pipeline contracts (2026-07-18 exploration)
 
@@ -17,7 +17,7 @@ Issue #23 (filed 2026-07-18): catalog five months stale (inventory 2026-02-18, S
 
 ## Infra (rtj + water-temp-bc)
 
-- `modules/gha_s3_role` (rtj#147): role name derives to `role_gha_stac_dem_bc`; ListBucket + GetBucketLocation on bucket, Get/PutObject on objects, **no DeleteObject by default** — sufficient for no-delete sync and the backstop against the `--delete` wipe scenario. Account OIDC provider already provisioned. ARN pattern: `arn:aws:iam::414155577829:role/role_gha_stac_dem_bc`.
+- `modules/gha_s3_role`: role name derives to `role_gha_stac_dem_bc`; ListBucket + GetBucketLocation on bucket, Get/PutObject on objects, **no DeleteObject by default** — sufficient for no-delete sync and the backstop against the `--delete` wipe scenario. Account OIDC provider already provisioned. ARN pattern: `arn:aws:iam::414155577829:role/role_gha_stac_dem_bc`.
 - Bucket `stac-dem-bc`: public + CORS, **no versioning** (water-temp-bc has it) → optional versioning rider in Phase 2 since collection.json is overwritten in place every run.
 - STAC API = stac-fastapi-pgstac + TiTiler + Caddy on **geoserv** (`images.a11s.one`); DB `stac` holds stac-dem-bc. Registration: `rtj/scripts/geoserv/stac_register-pypgstac.sh` on-host — full delete-and-reload, 46 min for 58k items (S3 download dominates; DB load 10 s).
 - rtj has an in-flight branch (`172-stac-floodplains-bc-bucket`) → Phase 2 branches off rtj main. No branch protection on stac_dem_bc main; `claude.yml` has no push trigger; GITHUB_TOKEN pushes don't retrigger workflows.

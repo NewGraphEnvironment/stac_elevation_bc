@@ -130,8 +130,8 @@ Migration approach:
 
 ## SRED Tracking
 
-- Primary: NewGraphEnvironment/sred-2025-2026#8
-- Secondary: NewGraphEnvironment/sred-2025-2026#3
+- Primary: an internal issue
+- Secondary: an internal issue
 
 ---
 

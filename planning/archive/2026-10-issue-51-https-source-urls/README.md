@@ -16,7 +16,7 @@ Three guards keep the old form out:
 - A test fails if any tracked file under `data/` holds a one-slash URL.
 
 The plan review found a cross-repo hazard: stac_orthophoto_bc does not pin ngr, and
-its item qmd breaks on `https://` input. That is filed as stac_orthophoto_bc#48.
+its item qmd breaks on `https://` input. That is filed as an internal issue.
 
 The review also showed one of my own findings was wrong. I had claimed
 `url_to_item_id` drops a character on the one-slash form. It does not; both

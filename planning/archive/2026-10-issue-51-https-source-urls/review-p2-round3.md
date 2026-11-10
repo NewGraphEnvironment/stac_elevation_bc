@@ -80,7 +80,7 @@ test never touches ngr.
   directory markers; DEM 102,416, DSM 95,889 and 157 groups identical; 0 new and
   0 deleted) match `logs/20261006_205751_51_walk_compare.log`. The log is gitignored by
   `logs/*.log`, as the file says.
-- stac_orthophoto_bc#48 exists, is OPEN, and its title fits. Lines 136, 142 and 148 of
+- An internal issue exists, is OPEN, and its title fits. Lines 136, 142 and 148 of
   its `stac_create_item.qmd` are as described.
 - The Phase 2 boxes are true of the code. The restore-the-bug claim is borne out by the
   mutation table above.

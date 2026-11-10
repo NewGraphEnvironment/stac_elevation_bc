@@ -22,8 +22,8 @@ forbid = ["image"]
 [transport]
 # MagicDNS name of the STAC host, over the tailnet. Root-only by design: cloud-init
 # provisions no user account, so <user>@geopro is "Permission denied (publickey)" and
-# that is not a fault (rtj#193). The node is untagged, so its tailnet key expires
-# after 180 days; it has dropped off once and come back on a different IP (rtj#208).
+# that is not a fault. The node is untagged, so its tailnet key expires
+# after 180 days; it has dropped off once and come back on a different IP.
 # If the tailnet is the suspect, the DigitalOcean reserved IP is the same machine:
 #   stacs register --config stacs.toml --host root@146.190.12.8 --mode drift
 # None of this is secret -- images.a11s.one resolves to that address in public DNS.

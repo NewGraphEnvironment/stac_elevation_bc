@@ -4,7 +4,7 @@ Read-only agent; findings relayed here by the parent session.
 
 | id | finding | disposition |
 |---|---|---|
-| B1 | ngr 0.0.3 breaks stac_orthophoto_bc item qmd (non-idempotent replace, id slice) | Filed stac_orthophoto_bc#48; note in ngr PR/NEWS |
+| B1 | ngr 0.0.3 breaks stac_orthophoto_bc item qmd (non-idempotent replace, id slice) | Filed an internal issue; note in ngr PR/NEWS |
 | G1 | legacy `stac_create_item.qmd:231` same replace; `stac_create_collection.qmd` writes urls_list.txt bypassing the guard | qmd:231 folded into Phase 4; collection qmd writes correct URLs once ngr is fixed — left, noted |
 | G2 | `test_register_manifest.py:47` and `test_dsm_pair.py:231` assert single-slash acceptance | Phase 4: invert to raises |
 | G3 | checks at three hand-picked entry points leave silent paths (item_create all modes, item_reprocess, dsm_pair key_relative/tile_key_parse) | Phase 4: one shared helper at every file-read point + in key parsing |

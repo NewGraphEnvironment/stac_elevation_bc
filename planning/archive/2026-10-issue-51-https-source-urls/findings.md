@@ -92,7 +92,7 @@ So the first scheduled run after merge should report no changes.
 `https://` URLs: lines 136 and 142 run `.replace("https:/", "https://")`, which is not
 idempotent and gives `https:///...`, and line 148 slices the id at `len(path_s3)`, which
 gives ids with a leading `-`. It is latent until that repo regenerates
-`data/urls_list.txt` with ngr >= 0.0.3. Filed as stac_orthophoto_bc#48. This repo's
+`data/urls_list.txt` with ngr >= 0.0.3. Filed as an internal issue. This repo's
 legacy `stac_create_item.qmd:231` has the same non-idempotent replace; it is folded into
 Phase 4.
 

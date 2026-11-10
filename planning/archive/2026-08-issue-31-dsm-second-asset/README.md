@@ -41,8 +41,8 @@ one now returns 206 where it previously returned `000`.
 - **pgstac registration caused a real outage.** rtj's `stac_register-pypgstac.sh`
   DELETEs the collection before loading it and died in between on `cat "$DIR"/*.json`
   (ARG_MAX, ~6 MB of argv). `images.a11s.one` served zero items until repaired by hand.
-  A *recurrence* — rtj#196 hit it in 2026-07, wrote the convention entry, and never
-  repaired the script. Both fixed (`soul@95eddb2`, rtj#238). **This is what #27's
+  A *recurrence* — an internal issue hit it in 2026-07, wrote the convention entry, and never
+  repaired the script. Both fixed (`soul@95eddb2`, an internal issue). **This is what #27's
   upsert work exists to make impossible.**
 - **A progress bar on stderr eats your log lines.** Per-item `logger.warning` output
   interleaved with tqdm was unrecoverable; the failing ids had to be reconstructed by

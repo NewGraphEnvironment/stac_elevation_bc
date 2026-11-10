@@ -102,17 +102,17 @@ catalogue is in this state", and it was not yet; v2.0.0 belongs after the drop.
   `data/stac_result.rds` (64 features against the live collection). The published
   site carried a query that would return nothing after the drop.
 
-### Open, and rtj#252 BLOCKS the drop
+### Open, and an internal issue BLOCKS the drop
 
 | PR | why |
 |---|---|
-| [rtj#252](https://github.com/NewGraphEnvironment/rtj/pull/252) | `scripts/dem/_shared.R` — the only live code consumer anywhere; reads both the id and the asset key |
+| an internal pull request | `scripts/dem/_shared.R` — the only live code consumer anywhere; reads both the id and the asset key |
 | [fly#46](https://github.com/NewGraphEnvironment/fly/pull/46) | roxygen prose |
 | [stac_floodplains_bc#25](https://github.com/NewGraphEnvironment/stac_floodplains_bc/pull/25) | one line of prose |
 
 ### Remaining (phase 7 tail + phase 8)
 
-Merge rtj#252 → `collection_unregister.sh --yes stac-dem-bc` (**irreversible**;
+Merge an internal issue → `collection_unregister.sh --yes stac-dem-bc` (**irreversible**;
 after it pgstac's rows are the last copy of the old-shaped catalogue, and `--all`
 cannot rebuild them) → `--version 2.0.0` + re-register the collection → NEWS +
 tag → file the repo-rename issue → `/planning-archive`.

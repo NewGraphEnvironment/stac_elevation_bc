@@ -156,7 +156,7 @@ Implement automated weekly STAC DEM BC updates using VM-based cron automation wi
 
 ## SRED Tracking
 
-- **Primary:** [NewGraphEnvironment/sred-2025-2026#8](https://github.com/NewGraphEnvironment/sred-2025-2026/issues/8) (Performance Benchmarking)
+- **Primary:** an internal issue (Performance Benchmarking)
 - **Milestone:** [Automated Weekly Updates & Performance Modernization](https://github.com/NewGraphEnvironment/stac_dem_bc/milestone/1)
 - **Issues:**
   - [#5](https://github.com/NewGraphEnvironment/stac_dem_bc/issues/5) - Automated Weekly Updates (tracking issue)

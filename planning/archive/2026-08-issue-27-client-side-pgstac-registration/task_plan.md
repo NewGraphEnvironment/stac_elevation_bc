@@ -34,7 +34,7 @@ re-registering the *same* id stops being an outage. #34 is made tidier by this
 |---|---|
 | API is read-only | `/conformance` advertises no transaction class; `/aggregate` 404s |
 | Host is `geopro` | tailnet `100.94.58.22`, eth0 `146.190.168.112`; DO **reserved** IP `146.190.12.8` is what `images.a11s.one` resolves to — same machine, second name |
-| Root-only SSH | by design; cloud-init has no `users:` block (rtj#193) |
+| Root-only SSH | by design; cloud-init has no `users:` block |
 | DB is `stac` | Caddy `images.a11s.one` → `stac-api` → `PGDATABASE: stac` |
 | pypgstac 0.9.9 | `cd /opt/geoserv/scripts && uv run pypgstac`, `. /opt/geoserv/.env` |
 | `--method` defaults to `insert` | ran `--help` on the host: `Default: <Methods.insert: 'insert'>` — upsert is never the default |
@@ -82,7 +82,7 @@ re-registering the *same* id stops being an outage. #34 is made tidier by this
       ~6 MB against a ~2 MB ARG_MAX)
 - [x] `HOST="${STAC_HOST:-root@geopro}"`, `DB="${STAC_DB:-stac}"`; header records
       the reserved IP `146.190.12.8` as fallback (geopro is untagged on the
-      tailnet, so it carries a 180-day key expiry — rtj#208)
+      tailnet, so it carries a 180-day key expiry — an internal issue)
 - [x] Remote `mktemp` + remote trap; the reference uses a fixed path whose `rm` is
       skipped on failure
 - [x] **Remote** count guard against an expected count (B3)

@@ -254,7 +254,7 @@ DELETEs the collection (step 2) before loading it (step 5). It died in between o
 all succeeded; only the concatenation failed. `find -exec cat {} +` produced all
 102,460 lines and pypgstac loaded them in **27 seconds**.
 
-That was a *recurrence*: rtj#196 hit the identical failure in 2026-07, wrote the
+That was a *recurrence*: an internal issue hit the identical failure in 2026-07, wrote the
 ARG_MAX entry into soul's `code-check.md`, and never repaired the script — while
 the convention's *other* entry still prescribed the broken glob. Both fixed
 (`soul@95eddb2`, rtj PR #238).

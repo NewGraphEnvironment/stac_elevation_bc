@@ -280,10 +280,10 @@ Test cases:
 
 ## SRED Tracking
 
-**Primary:** https://github.com/NewGraphEnvironment/sred-2025-2026/issues/8
-**Secondary:** https://github.com/NewGraphEnvironment/sred-2025-2026/issues/3
+**Primary:** an internal issue
+**Secondary:** an internal issue
 **Related:** https://github.com/NewGraphEnvironment/stac_dem_bc/issues/3
-**Milestone:** https://github.com/NewGraphEnvironment/sred-2025-2026/milestone/1
+**Milestone:** an internal repository
 
 **Experimental aspects:**
 - Automated STAC collection updates from provincial data sources

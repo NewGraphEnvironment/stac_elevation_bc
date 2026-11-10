@@ -1,7 +1,7 @@
 # Issue #34 — rename the collection to `stac-elevation-bc`, asset `image` → `dem`
 
 **Closed:** 2026-09-01 · **Release:** `v2.0.0` (`f9de569`) · **PR:** #39 ·
-**Downstream:** rtj#252, fly#46, stac_floodplains_bc#25
+**Downstream:** an internal issue, fly#46, stac_floodplains_bc#25
 
 ## Outcome
 

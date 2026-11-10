@@ -1,6 +1,6 @@
 # Task: Automate monthly incremental catalog updates via GitHub Actions (#23)
 
-The catalog is five months stale: the source URL inventory was last refreshed 2026-02-18, the S3 catalog last built 2026-02-11, and pgstac last registered 2026-02-13. Automation was scoped as Phases 3–4 of #5 but never re-tracked after that issue auto-closed, and its standing-VM premise no longer matches infrastructure. Adopt the water-temp-bc pattern: monthly GitHub Actions cron + `workflow_dispatch`, OIDC role provisioned in rtj (rtj#184), incremental pipeline run on the runner, catalog synced to S3, refreshed caches committed back to `main`.
+The catalog is five months stale: the source URL inventory was last refreshed 2026-02-18, the S3 catalog last built 2026-02-11, and pgstac last registered 2026-02-13. Automation was scoped as Phases 3–4 of #5 but never re-tracked after that issue auto-closed, and its standing-VM premise no longer matches infrastructure. Adopt the water-temp-bc pattern: monthly GitHub Actions cron + `workflow_dispatch`, OIDC role provisioned in rtj, incremental pipeline run on the runner, catalog synced to S3, refreshed caches committed back to `main`.
 
 ## Phase 1: CI-safe pipeline fixes
 
@@ -11,11 +11,11 @@ The catalog is five months stale: the source URL inventory was last refreshed 20
 - [x] New `scripts/urls_reconcile.py` (one-off helper): compute item-backed URLs from the validation CSV via the url→id mapping, rewrite `urls_list.txt` to that subset (dry-run default, `--apply` to rewrite) — re-flags the 2,107 never-built URLs on the catch-up run
 - [x] Cold-path rehearsal (local): temp `STAC_OUTPUT_DIR` with only S3-fetched collection.json, synthetic 3-URL urls_new.txt → item_create → item_validate → `s3_sync-ci.sh --dryrun`; verified zero deletions planned, items-before-collection order, only new files uploaded (see findings.md 2026-07-18 rehearsal)
 
-## Phase 2: Companion infra — rtj#184 (in ~/Projects/repo/rtj, fresh branch off rtj main)
+## Phase 2: Companion infra — an internal issue (in ~/Projects/repo/rtj, fresh branch off rtj main)
 
 - [x] Add `module "stac_dem_bc_update"` + ARN output to `env/prod/main.tf` (rtj branch `184-gha-s3-role-stac-dem-bc`, commit 984d00b, pushed)
 - [x] Optional rider (user call): enable versioning on `stac-dem-bc` — committed separately (c81bcf4) so it can be dropped before apply if unwanted
-- [x] `tofu plan` / `apply` in env/prod — user applied; merged as rtj PR #189 (with review commit 15e717f documenting the deliberate no-expiry-on-versioning decision); rtj#184 closed
+- [x] `tofu plan` / `apply` in env/prod — user applied; merged as rtj PR #189 (with review commit 15e717f documenting the deliberate no-expiry-on-versioning decision); an internal issue closed
 - [x] Post role ARN to #23 (issuecomment-5013597947) — matches the ARN already in update.yml
 
 ## Phase 3: Workflow
@@ -27,11 +27,11 @@ The catalog is five months stale: the source URL inventory was last refreshed 20
 
 ## Phase 4: Catch-up run + verification (post-merge)
 
-- [x] PR via `/gh-pr-push` (PR #24), merged 2026-07-18 as dca0298 (merge commit, branch deleted); SRED xref corrected to sred#8 per user
+- [x] PR via `/gh-pr-push` (PR #24), merged 2026-07-18 as dca0298 (merge commit, branch deleted); SRED xref corrected to an internal issue per user
 - [x] Seed catch-up: `urls_reconcile.py --apply` committed to main (308a441) — urls_list.txt trimmed to 58,019 item-backed URLs
 - [x] Catch-up build ran LOCALLY 2026-07-18 18:03–21:39 PT (3.6 h): 40,021/40,021 items created (zero shortfall — parenthesized files included), validated, synced (items first, collection.json 17.7 MB last), caches committed (815d8f6). Count math exact: 58,019 prior + 40,021 new = 98,040 item links in the live collection.json
 - [x] `workflow_dispatch` from main verified the steady-state path end to end (run 29673672894, success): R + uv setup, OIDC auth, fresh listing 98,039 vs cache 98,039, New 0 / Deleted 0, clean early exit with item steps skipped. Full count reconciliation: 58,019 − 1 upstream-deleted + 40,021 new = 98,039 live files; collection holds 98,040 links (retains the item for the deleted source; urls_deleted.txt audit = 1 line)
-- [x] Register on geoserv — eventful: the register script's NDJSON concat died on ARG_MAX at 98k files (rtj#196 filed, fixed form used manually) and the 90 space-URL items needed %20-encoded refetch (#25 filed); load completed 2026-07-19, verified at API (new 2024 item, 2017 original, and a parenthesized item all HTTP 200)
+- [x] Register on geoserv — eventful: the register script's NDJSON concat died on ARG_MAX at 98k files (an internal issue filed, fixed form used manually) and the 90 space-URL items needed %20-encoded refetch (#25 filed); load completed 2026-07-19, verified at API (new 2024 item, 2017 original, and a parenthesized item all HTTP 200)
 - [x] Cron live (workflow on main, dispatch-proven; next fire Aug 3); #23 closed via docs commit
 
 ## Validation

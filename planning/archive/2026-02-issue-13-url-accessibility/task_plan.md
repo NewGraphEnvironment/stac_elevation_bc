@@ -39,7 +39,6 @@ Create a validation script that checks source GeoTIFF URL accessibility on the B
 
 ## SRED Tracking
 
-- Relates to NewGraphEnvironment/sred-2025-2026#3
 
 ---
 
