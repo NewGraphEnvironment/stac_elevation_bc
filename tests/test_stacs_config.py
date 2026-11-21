@@ -18,6 +18,8 @@ import json
 import os
 import re
 import sys
+import tomllib
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -26,15 +28,16 @@ sys.path.insert(0, os.path.join(ROOT, "scripts"))
 
 import collection_patch  # noqa: E402
 from item_migrate import ASSET_RENAMES, item_migrate  # noqa: E402
-from stac_utils import ASSET_DEM, PATH_S3_STAC  # noqa: E402
+from stac_utils import ASSET_DEM, LIDARBC_DELIVERY, PATH_S3_STAC, _DELIVERY_RE, lidarbc_delivery  # noqa: E402
 
 # A hard import, not importorskip: a CI that forgot to install stacs must fail here,
 # not skip the only tests that pin the catalogue's rules.
 import stacs  # noqa: E402
 from stacs.cli import ConfigError, main as stacs_main, read_config  # noqa: E402
+from stacs.queryables import parse_queryables  # noqa: E402
 
 CONFIG = os.path.join(ROOT, "stacs.toml")
-STACS_VERSION = "0.1.0"
+STACS_VERSION = "0.6.0"
 DEM = "https://nrs.objectstore.gov.bc.ca/gdwuts/082/082f/2022/dem/bc_082f005_xli1m_utm11_2022.tif"
 
 
@@ -51,21 +54,34 @@ def cfg():
 
 def test_the_pinned_stacs_is_the_one_installed():
     """From the tag, not merely at its version: `__version__` is pyproject's, so an
-    install from a later commit on main reads 0.1.0 too. direct_url.json records the
-    revision pip/uv was asked for."""
+    install from a later commit on main reads the same version. direct_url.json records
+    the revision uv was asked for."""
     assert stacs.__version__ == STACS_VERSION
     direct = json.loads(importlib.metadata.distribution("stacs").read_text("direct_url.json"))
     assert direct["vcs_info"]["requested_revision"] == f"v{STACS_VERSION}"
 
 
+def _locked_stacs_tag():
+    with open(os.path.join(ROOT, "uv.lock"), "rb") as fh:
+        lock = tomllib.load(fh)
+    (pkg,) = [p for p in lock["package"] if p["name"] == "stacs"]
+    (tag,) = parse_qs(urlsplit(pkg["source"]["git"]).query)["tag"]
+    return tag
+
+
 def test_every_install_path_pins_the_same_tag():
-    """The workflow and environment.yml each install stacs; a bump in one only would
-    test one version in CI and run another on the laptop that registers."""
-    pin = re.compile(r"stacs@v([0-9][0-9A-Za-z.\-]*[0-9A-Za-z])")
-    for rel in (".github/workflows/update.yml", "environment.yml"):
-        with open(os.path.join(ROOT, rel)) as fh:
-            # Every pin in the file, whole: a substring test passed `v0.1.01`.
-            assert pin.findall(fh.read()) == [STACS_VERSION], f"{rel} does not pin v{STACS_VERSION}"
+    """pyproject.toml declares the tag and uv.lock resolves it (#16); the workflow
+    installs from the lock, so a bump in pyproject alone fails here until it is
+    relocked, rather than testing one version in CI and running another by hand."""
+    with open(os.path.join(ROOT, "pyproject.toml"), "rb") as fh:
+        project = tomllib.load(fh)
+    assert project["tool"]["uv"]["sources"]["stacs"]["tag"] == f"v{STACS_VERSION}"
+    assert _locked_stacs_tag() == f"v{STACS_VERSION}"
+    # No second install path may come back beside the lock: environment.yml was one
+    # until #16, and the workflow's own `stacs @ git+...` line was another.
+    assert not os.path.exists(os.path.join(ROOT, "environment.yml"))
+    with open(os.path.join(ROOT, ".github", "workflows", "update.yml")) as fh:
+        assert "NewGraphEnvironment/stacs" not in fh.read()
 
 
 def test_collection_id_is_the_modules(cfg):
@@ -206,3 +222,32 @@ def test_audit_refuses_an_empty_directory(tmp_path, capsys):
     r = _audit(tmp_path, capsys, [])
     assert r.returncode == 1
     assert "no item JSONs" in r.stderr
+
+
+# =============================================================================
+# Queryables (#62)
+# =============================================================================
+
+def test_the_delivery_queryable_is_declared(cfg):
+    """stacs loads it on register; until then `verify` reports it not served."""
+    q = parse_queryables(cfg["queryables"])
+    assert set(q) == {LIDARBC_DELIVERY}
+    assert q[LIDARBC_DELIVERY]["type"] == "string"
+
+
+def test_the_delivery_pattern_is_the_one_items_are_built_with(cfg):
+    """The pattern a client is told is the regex the value is parsed with: the same
+    body, anchored, as stac_pointcloud_bc pins its own."""
+    pattern = cfg["queryables"][LIDARBC_DELIVERY]["pattern"]
+    inner = re.search(r"\((.*)\)", _DELIVERY_RE.pattern).group(1)
+    assert pattern == f"^{inner}$"
+
+
+def test_every_listed_delivery_matches_the_declared_pattern(cfg):
+    """Over the real listing, not a fixture: a delivery the pattern refused would be
+    published on items yet described to clients as impossible."""
+    pattern = re.compile(cfg["queryables"][LIDARBC_DELIVERY]["pattern"])
+    with open(os.path.join(ROOT, "data", "urls_list.txt")) as fh:
+        deliveries = {d for d in map(lidarbc_delivery, fh.read().splitlines()) if d}
+    assert deliveries, "no deliveries parsed from data/urls_list.txt"
+    assert [d for d in deliveries if not pattern.fullmatch(d)] == []

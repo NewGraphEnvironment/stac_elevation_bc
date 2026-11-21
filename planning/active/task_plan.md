@@ -41,25 +41,25 @@ Approved by the owner at the plan gate, 2026-11-21.
 
 ## Phase 1: uv and stacs (batch 3: #16, #62)
 
-- [ ] `pyproject.toml` on stac_pointcloud_bc's pattern: `requires-python = ">=3.12"`, the
+- [x] `pyproject.toml` on stac_pointcloud_bc's pattern: `requires-python = ">=3.12"`, the
       `environment.yml` pip list as dependencies, `stacs` from `[tool.uv.sources]` git tag `v0.6.0`,
       `[dependency-groups] dev = [pytest, pyyaml]`, `[tool.uv] package = false`
-- [ ] `uv lock`, then hold each package to the Nov 21 CI run's resolved version
+- [x] `uv lock`, then hold each package to the Nov 21 CI run's resolved version
       (`uv lock --upgrade-package <pkg>==<ver>`, versions read from run 44845605037's install log);
       the differences that remain (stacs' own new deps, e.g. `rfc8785`) listed in findings.md
-- [ ] Delete `environment.yml`
-- [ ] `update.yml` install step → `uv sync --locked --python 3.12` (keeps `.venv/bin/...` paths every
+- [x] Delete `environment.yml`
+- [x] `update.yml` install step → `uv sync --locked --python 3.12` (keeps `.venv/bin/...` paths every
       later step uses) and the existing import check
-- [ ] `tests/test_stacs_config.py`: `STACS_VERSION = "0.6.0"`; replace the
+- [x] `tests/test_stacs_config.py`: `STACS_VERSION = "0.6.0"`; replace the
       `stacs@v…` regex test with pointcloud's `test_every_install_path_pins_the_same_stacs_tag`
       (pyproject source tag + `uv.lock` tag + installed version); keep the `direct_url.json` check if
       uv records `requested_revision`, else drop it with the reason in the docstring
-- [ ] `stacs.toml`: `[queryables."lidarbc:delivery"]`, pointcloud's fragment verbatim
-- [ ] Test: the declared `pattern` matches `stac_utils._DELIVERY_RE`'s capture group (same regex
+- [x] `stacs.toml`: `[queryables."lidarbc:delivery"]`, pointcloud's fragment verbatim
+- [x] Test: the declared `pattern` matches `stac_utils._DELIVERY_RE`'s capture group (same regex
       body), `parse_queryables` accepts the table, and every listed delivery in
       `data/urls_list.txt` that `lidarbc_delivery()` returns matches the pattern; restore-the-bug
       check (a changed pattern goes red)
-- [ ] `uv run pytest tests/ -q` green
+- [x] `uv run pytest tests/ -q` green
 
 ## Phase 2: temporal extent (batch 4: #70)
 

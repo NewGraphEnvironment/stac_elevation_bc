@@ -52,3 +52,16 @@ When the plan finds that a batch, or one of its members, is more than one PR's w
 
 | Error | Resolution |
 |-------|------------|
+
+## Phase 1: the lock against the run it replaces
+
+`uv lock` held with `--upgrade-package <pkg>==<ver>` for every package run 44845605037 installed
+(scratch extraction of its `+ pkg==ver` lines, 64 packages besides stacs). `uv export` of the lock
+against that set: identical except `colorama==0.4.6` (Windows-only, behind a marker; not installed
+on Linux or macOS) and stacs itself (0.1.0 @ d4934dd → 0.6.0 @ 138f77e, the v0.6.0 tag commit).
+`uv sync --locked` on this Mac moved the local `.venv` from rasterio 1.5.1 to CI's 1.5.2 and dropped
+`six`, the one package it held outside the lock. uv writes `requested_revision: v0.6.0` into
+stacs' `direct_url.json`, so the installed-from-the-tag check is kept.
+
+Mutations: the queryable pattern narrowed to `[a-h]` fails both pattern tests; the pyproject tag
+set to v0.5.0 fails the pin test. 354 tests pass on the locked env.

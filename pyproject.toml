@@ -1,0 +1,41 @@
+[project]
+name = "stac-elevation-bc"
+version = "0.0.0"
+description = "Python steps of the stac-elevation-bc pipeline: change detection follow-up, STAC items, DSM pairing, footprints, validation."
+# 3.12, the Python the monthly runner and the local venv both run (#16). rasterio 1.5 needs it;
+# under a 3.11 floor uv.lock forks to rasterio 1.4.x there (stac_airphoto_bc#44).
+requires-python = ">=3.12"
+# Versions are held in uv.lock to what the monthly run resolved on 2026-11-21 (run 44845605037),
+# the last install before this file existed. The catalogue version is NEWS.md's, not this one.
+dependencies = [
+    # validation extra = jsonschema, required by item_validate.py
+    "pystac[validation]>=1.12.0",
+    "pystac-client>=0.8.0",
+    "rio-stac>=0.11.0",
+    "rasterio>=1.4.0",
+    "rio-cogeo",
+    "shapely",
+    "pandas",
+    # HTTP checks (stac_utils, urls_check_access.py)
+    "requests",
+    "tqdm",
+    # JSON/dict comparison in the item rewrite harness
+    "deepdiff",
+    # Registration and verification on pgstac (#49), from its git tag (stacs README,
+    # "Install"). tests/test_stacs_config.py pins the tag here, in uv.lock and installed.
+    "stacs",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    # tests/test_workflow_*.py read update.yml
+    "pyyaml",
+]
+
+[tool.uv.sources]
+stacs = { git = "https://github.com/NewGraphEnvironment/stacs", tag = "v0.6.0" }
+
+# Scripts-only repo, not an installable package; uv manages the environment.
+[tool.uv]
+package = false
