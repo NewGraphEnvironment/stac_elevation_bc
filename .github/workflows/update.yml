@@ -317,9 +317,12 @@ jobs:
           # The pairing list whenever it is non-empty: it is cumulative (#57),
           # so everything on it is a pairing change not yet published, whether
           # this run re-paired or an earlier run failed before its sync. At
-          # most its first 2000 per run, for the footprint list's reason: a
-          # list too long to rebuild inside the job timeout would time out
-          # every month once kept. The rest stay listed; the prune drains it.
+          # most 2000 per run, for the footprint list's reason: a list too long
+          # to rebuild inside the job timeout would time out every month once
+          # kept. The rest stay listed; the prune drains it. --rebuild-select
+          # also leaves out a URL whose DEM is not in this run's listing, which
+          # would republish a tile deleted upstream; it stays listed until a
+          # run that syncs, whose prune drops it with its listing committed.
           #
           # The footprint list is skipped on the footprint dispatch, which
           # rewrites every published item itself, and when it is too long to
@@ -341,13 +344,16 @@ jobs:
           N_PAIR=0
           if [ -f data/urls_pairing_changed.txt ]; then N_PAIR=$(wc -l < data/urls_pairing_changed.txt | tr -d ' '); fi
           if [ "$N_PAIR" -gt 2000 ]; then
-            echo "::warning title=Pairing rebuild list long::$N_PAIR URLs - rebuilding the first 2000; the rest stay listed for later runs"
+            echo "::warning title=Pairing rebuild list long::$N_PAIR URLs - rebuilding at most 2000; the rest stay listed for later runs"
           fi
+          # Its own file first, so a failing select fails the step under bash -e
+          # rather than vanishing inside a pipeline.
+          .venv/bin/python scripts/dsm_pair.py --rebuild-select 2000 > "$RUNNER_TEMP/urls_pairing_select.txt"
           {
             for f in "${LISTS[@]}"; do
               if [ -f "$f" ]; then cat "$f"; fi
             done
-            if [ -f data/urls_pairing_changed.txt ]; then head -n 2000 data/urls_pairing_changed.txt; fi
+            cat "$RUNNER_TEMP/urls_pairing_select.txt"
           } | sort -u > "$RUNNER_TEMP/urls_rebuild.txt"
           if [ -s "$RUNNER_TEMP/urls_rebuild.txt" ]; then
             echo "rebuilding $(wc -l < "$RUNNER_TEMP/urls_rebuild.txt") items"
@@ -662,10 +668,10 @@ jobs:
 
           # The pairing rebuild list is cumulative in the same way (#57): the
           # new dem_dsm_pairs.csv commits whatever the run did, so the next
-          # run's diff will not list these URLs again. A URL leaves only when
-          # its staged item carries the current pairing (its dsm asset is the
-          # paired DSM, or it has none where the pairing has none), and only
-          # after the sync that uploaded it succeeded.
+          # run's diff will not list these URLs again. A URL leaves only after
+          # a successful sync: when its staged item carries the current pairing
+          # (its dsm asset is the paired DSM, or it has none where the pairing
+          # has none), or when its DEM has left the listing this commit keeps.
           if [ "${{ steps.sync.outcome }}" = "success" ] && [ -s data/urls_pairing_changed.txt ]; then
             if ! .venv/bin/python scripts/dsm_pair.py --prune-changed "$STAC_OUTPUT_DIR"; then
               echo "::warning title=Pairing prune failed::the rebuild list is kept unpruned; the next run retries"

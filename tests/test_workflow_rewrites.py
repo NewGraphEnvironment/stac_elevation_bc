@@ -97,7 +97,7 @@ def test_the_pairing_list_is_rebuilt_on_every_run_that_lists_it():
     run made that false, and the change was then never rebuilt.
     """
     run = {s.get("name"): s for s in steps()}["Rebuild items whose DSM pairing or footprint changed"]["run"]
-    assert "head -n 2000 data/urls_pairing_changed.txt" in run
+    assert "scripts/dsm_pair.py --rebuild-select 2000" in run
     # The old guard named these; nothing in the step may condition on them now.
     assert "steps.detect.outputs.changes" not in run and "inputs.backfill" not in run, \
         "the pairing list is added under a condition again"

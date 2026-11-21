@@ -529,8 +529,9 @@ def test_the_pairing_list_accumulates_across_runs(tmp_path, monkeypatch):
 
     The next run's diff against it is then empty, so a list rebuilt from "this
     run's diff" would forget every URL the failed run did not publish. The list
-    must keep what an earlier run put on it -- except a DEM deleted upstream
-    since, whose rebuild would republish a tile that no longer exists.
+    must keep what an earlier run put on it -- even a URL whose DEM is missing
+    from this run's listing (code-check round 2): if this run fails, its listing
+    is restored, and a drop made here would be committed without it.
     """
     import csv as _csv
     import dsm_pair
@@ -557,14 +558,14 @@ def test_the_pairing_list_accumulates_across_runs(tmp_path, monkeypatch):
         for i, r in enumerate(result["rows"]):
             w.writerow({**r, "dsm_key": ""} if i < 2 else r)
 
-    # An earlier run that failed left dem[2] listed, and a DEM since deleted.
+    # An earlier run that failed left dem[2] listed, and one this walk missed.
     changed = tmp_path / "changed.txt"
-    deleted = f"{PATH_S3}/000/000a/2020/dem/deleted_upstream_since.tif"
-    changed.write_text(f"{PATH_S3}/{dem[2]}\n{deleted}\n{PATH_S3}/{dem[0]}\n")
+    missing = f"{PATH_S3}/000/000a/2020/dem/missing_from_this_walk.tif"
+    changed.write_text(f"{PATH_S3}/{dem[2]}\n{missing}\n{PATH_S3}/{dem[0]}\n")
 
     assert _run_main(monkeypatch, *args, "--changed-urls", str(changed)) == 0
     lines = changed.read_text().splitlines()
-    assert lines == sorted(f"{PATH_S3}/{k}" for k in dem)
+    assert lines == sorted([missing, *(f"{PATH_S3}/{k}" for k in dem)])
 
     # A run with nothing new to say keeps everything already listed.
     assert _run_main(monkeypatch, *args, "--changed-urls", str(changed)) == 0
@@ -583,7 +584,8 @@ def test_prune_keeps_everything_when_there_is_no_pairing_to_compare(tmp_path):
     changed = tmp_path / "changed.txt"
     changed.write_text(f"{url}\n")
 
-    assert pairing_changed_prune(str(changed), str(staged), str(tmp_path / "absent.csv")) == (0, 1)
+    assert pairing_changed_prune(str(changed), str(staged), str(tmp_path / "absent.csv"),
+                                 str(tmp_path / "absent_listing.txt")) == (0, 1)
     assert changed.read_text() == f"{url}\n"
 
 
@@ -627,8 +629,10 @@ def test_prune_drops_only_urls_whose_staged_item_carries_the_current_pairing(tmp
     _item_write(staged, url[6], encode_url_for_gdal(f"{PATH_S3}/{dsm(6)}"))  # unpaired, has one
     changed = tmp_path / "changed.txt"
     changed.write_text("".join(f"{u}\n" for u in url.values()))
+    listing = tmp_path / "dem.txt"
+    listing.write_text("".join(f"{u}\n" for u in url.values()))
 
-    pruned, kept = pairing_changed_prune(str(changed), str(staged), str(pairs))
+    pruned, kept = pairing_changed_prune(str(changed), str(staged), str(pairs), str(listing))
 
     assert (pruned, kept) == (2, 4)
     assert changed.read_text().splitlines() == sorted([url[2], url[3], url[4], url[6]])
@@ -652,3 +656,44 @@ def test_prune_runs_from_the_command_line_without_reading_listings(tmp_path, mon
                    "--changed-urls", str(changed), "--dem-keys", str(tmp_path / "absent.txt"))
     assert rc == 0
     assert changed.read_text() == ""
+
+
+def test_rebuild_select_skips_dems_absent_from_the_listing_and_caps(tmp_path):
+    """A DEM missing from this run's listing is not rebuilt (it would republish a
+    deleted tile) and not dropped either; the cap takes the first N of the rest."""
+    from dsm_pair import pairing_rebuild_select
+    from stac_utils import PATH_S3
+
+    urls = [f"{PATH_S3}/000/000a/2020/dem/bc_000a00{n}_xli1m_utm10_2020.tif" for n in range(5)]
+    changed = tmp_path / "changed.txt"
+    changed.write_text("".join(f"{u}\n" for u in urls))
+    listing = tmp_path / "dem.txt"
+    listing.write_text("".join(f"{u}\n" for u in urls if u != urls[1]))
+
+    assert pairing_rebuild_select(str(changed), str(listing), 2) == [urls[0], urls[2]]
+    assert pairing_rebuild_select(str(changed), str(listing), 10) == [urls[0], *urls[2:]]
+    assert len(changed.read_text().splitlines()) == 5
+
+
+def test_prune_drops_a_dem_that_left_the_listing_only_when_the_listing_loads(tmp_path):
+    """After a successful sync the listing commits with the prune, so the drop is safe there."""
+    from dsm_pair import pairing_changed_prune
+    from stac_utils import PATH_S3, encode_url_for_gdal
+
+    dem = "000/000a/2020/dem/bc_000a001_xli1m_utm10_2020.tif"
+    gone = f"{PATH_S3}/000/000a/2020/dem/bc_000a009_xli1m_utm10_2020.tif"
+    pairs = tmp_path / "pairs.csv"
+    _pairs_csv_write(pairs, [(dem, dem.replace("/dem/", "/dsm/"))])
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    changed = tmp_path / "changed.txt"
+    listing = tmp_path / "dem.txt"
+    listing.write_text(f"{PATH_S3}/{dem}\n")
+
+    changed.write_text(f"{PATH_S3}/{dem}\n{gone}\n")
+    assert pairing_changed_prune(str(changed), str(staged), str(pairs), str(listing)) == (1, 1)
+    assert changed.read_text() == f"{PATH_S3}/{dem}\n"
+
+    changed.write_text(f"{PATH_S3}/{dem}\n{gone}\n")
+    assert pairing_changed_prune(str(changed), str(staged), str(pairs),
+                                 str(tmp_path / "unreadable.txt")) == (0, 2)

@@ -227,6 +227,8 @@ def pairing_setup(work, stac_out):
             fh.write(f"{a},{b},000/000a/2020,t,suffix,paired\n")
     urls = [f"{PATH_S3}/{d}" for d in dem]
     (work / "data" / "urls_pairing_changed.txt").write_text("".join(f"{u}\n" for u in urls))
+    # This run's listing, which the prune reads; a failed run restores HEAD's.
+    (work / "data" / "urls_list.txt").write_text("".join(f"{u}\n" for u in urls))
 
     stac_out.mkdir(exist_ok=True)
     for u, d, carries in zip(urls, dsm, (True, False)):

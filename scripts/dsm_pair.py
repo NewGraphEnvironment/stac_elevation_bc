@@ -25,10 +25,10 @@ Every DEM lands in exactly one bucket:
 Nothing is ever dropped silently. The counts of those five buckets sum to the
 DEM input count, and the script asserts that before writing anything.
 
-The rebuild list (--changed-urls) is CUMULATIVE (#57). Each run appends the
+The rebuild list (--changed-urls) is CUMULATIVE (#57). Each run adds the
 DEM URLs whose pairing changed, and a URL leaves the list only through
---prune-changed: after a successful sync, when its staged item carries the
-current pairing. The workflow commits the new pairs csv even when the run
+--prune-changed, after a successful sync: when its staged item carries the
+current pairing, or when its DEM has left the listing. The workflow commits the new pairs csv even when the run
 fails, so the next run's diff against it comes out empty. A list rebuilt from
 "this run's diff" would therefore forget every change a failed run did not
 publish, and that item would never gain its dsm asset.
@@ -36,6 +36,7 @@ publish, and that item would never gain its dsm asset.
 Usage:
     python scripts/dsm_pair.py                    # write pairs csv + report
     python scripts/dsm_pair.py --dry-run          # print the summary only
+    python scripts/dsm_pair.py --rebuild-select 2000   # what the rebuild builds
     python scripts/dsm_pair.py --prune-changed DIR  # after a successful sync
 """
 
@@ -322,8 +323,8 @@ def dsm_lookup_load(path: str = PAIRS_CSV) -> dict[str, str]:
     return lookup
 
 
-def pairing_changed_prune(path: str, staged_dir: str,
-                          pairs_csv: str = PAIRS_CSV) -> tuple[int, int]:
+def pairing_changed_prune(path: str, staged_dir: str, pairs_csv: str = PAIRS_CSV,
+                          dem_keys_path: str = DEM_KEYS_FILE) -> tuple[int, int]:
     """Drop from the rebuild list every URL whose staged item carries its pairing. (pruned, kept)
 
     Called only after a successful sync, so a staged item is a published one.
@@ -335,6 +336,11 @@ def pairing_changed_prune(path: str, staged_dir: str,
     a staged item with a stale or missing dsm did not carry the change. A URL
     that keeps failing stays listed and is retried every run, visibly. Same
     shape as footprint_extract.changed_prune.
+
+    A URL whose DEM is no longer in the listing also leaves: it was deleted
+    upstream and is never rebuilt (--rebuild-select). This is the safe place
+    for that drop, because the prune runs only after a successful sync, so the
+    listing that justifies it is committed in the same commit.
     """
     if not os.path.exists(path):
         return 0, 0
@@ -359,7 +365,12 @@ def pairing_changed_prune(path: str, staged_dir: str,
             return asset is None
         return asset is not None and asset.get("href") == encode_url_for_gdal(want)
 
-    kept = sorted({u for u in urls if not done(u)})
+    current = dem_urls_current(dem_keys_path)
+    gone = {u for u in urls if current is not None and u not in current}
+    if gone:
+        logger.info("%d listed URLs left the DEM listing - dropped: %s", len(gone),
+                    ", ".join(sorted(gone)[:5]))
+    kept = sorted({u for u in urls if u not in gone and not done(u)})
     tmp = f"{path}.tmp"
     with open(tmp, "w") as fh:
         fh.writelines(f"{u}\n" for u in kept)
@@ -367,29 +378,56 @@ def pairing_changed_prune(path: str, staged_dir: str,
     return len(set(urls)) - len(kept), len(kept)
 
 
-def pairing_list_merge(path: str, changed: list[str], rows: list[dict]) -> int:
+def pairing_list_merge(path: str, changed: list[str]) -> int:
     """Add this run's changed DEM keys to the cumulative rebuild list. Returns its length.
 
-    Never overwrites what is listed: the list holds every change not yet
-    published, and only --prune-changed takes a URL off it. Two exceptions,
-    both logged. A URL whose DEM is no longer in the listing leaves, because
-    rebuilding it would republish a tile deleted upstream (#28 owns those). A
-    partial line from a killed write leaves the same way, because it matches
-    no DEM. Written to a tmp file and renamed, so a kill mid-write leaves the
-    old list whole.
+    Never drops what is listed: the list holds every change not yet published,
+    and only --prune-changed, after a successful sync, takes a URL off. Not even
+    a URL whose DEM is missing from this run's listing: if the run then fails,
+    its listing is restored (#63) but a drop made here would commit, and the
+    change would be lost for good when the DEM reappears. --rebuild-select
+    keeps such a URL out of the rebuild instead. Written to a tmp file and
+    renamed, so a kill mid-write leaves the old list whole.
     """
-    current = {f"{PATH_S3}/{r['dem_key']}" for r in rows}
     prior = set(urls_read(path)) if os.path.exists(path) else set()
-    gone = prior - current
-    if gone:
-        logger.warning("%d listed URLs are not in the current DEM listing - dropped "
-                       "from the rebuild list: %s", len(gone), ", ".join(sorted(gone)[:5]))
-    listed = sorted((prior & current) | {f"{PATH_S3}/{k}" for k in changed})
+    listed = sorted(prior | {f"{PATH_S3}/{k}" for k in changed})
     tmp = f"{path}.tmp"
     with open(tmp, "w") as fh:
         fh.writelines(f"{u}\n" for u in listed)
     os.replace(tmp, path)
     return len(listed)
+
+
+def dem_urls_current(dem_keys_path: str) -> set[str] | None:
+    """This run's DEM listing as URLs, or None when it cannot be read."""
+    try:
+        return set(keys_load(dem_keys_path, "DEM"))
+    except ListingError as e:
+        logger.warning("%s - not filtering the rebuild list by the DEM listing", e)
+        return None
+
+
+def pairing_rebuild_select(path: str, dem_keys_path: str, limit: int) -> list[str]:
+    """The first `limit` listed URLs whose DEM is in this run's listing.
+
+    A URL whose DEM left the listing is not rebuilt -- that would republish a
+    tile deleted upstream (#28 owns those) -- but it stays listed: the prune
+    removes it after a sync whose listing commits with it.
+    """
+    if not os.path.exists(path):
+        return []
+    urls = sorted(set(urls_read(path)))
+    current = dem_urls_current(dem_keys_path)
+    if current is not None:
+        absent = [u for u in urls if u not in current]
+        if absent:
+            logger.warning("%d listed URLs are not in the DEM listing - not rebuilt: %s",
+                           len(absent), ", ".join(absent[:5]))
+        urls = [u for u in urls if u in current]
+    if len(urls) > limit:
+        logger.warning("%d listed URLs to rebuild - taking the first %d; the rest stay "
+                       "listed for later runs", len(urls), limit)
+    return urls[:limit]
 
 
 def summarize(result: dict) -> dict:
@@ -554,6 +592,9 @@ def main() -> int:
     parser.add_argument("--changed-urls", default=CHANGED_URLS_FILE)
     parser.add_argument("--dry-run", action="store_true",
                         help="Print the summary without writing outputs")
+    parser.add_argument("--rebuild-select", metavar="N", type=int, default=None,
+                        help="Print the first N URLs on --changed-urls whose DEM is in "
+                             "--dem-keys, one per line, then exit")
     parser.add_argument("--prune-changed", metavar="STAGED_DIR", default=None,
                         help="After a successful sync: drop from --changed-urls every URL "
                              "whose item in STAGED_DIR carries the current pairing, then exit")
@@ -563,9 +604,14 @@ def main() -> int:
                         format="%(asctime)s [%(levelname)s] %(message)s",
                         datefmt="%H:%M:%S")
 
+    if args.rebuild_select is not None:
+        sys.stdout.writelines(f"{u}\n" for u in pairing_rebuild_select(
+            args.changed_urls, args.dem_keys, args.rebuild_select))
+        return 0
+
     if args.prune_changed:
         pruned, kept = pairing_changed_prune(args.changed_urls, args.prune_changed,
-                                             args.pairs_csv)
+                                             args.pairs_csv, args.dem_keys)
         logger.info("Pairing rebuild list: %d published and pruned, %d kept for the "
                     "next run", pruned, kept)
         return 0
@@ -611,7 +657,7 @@ def main() -> int:
         logger.info("No pairing changes since the last run")
 
     os.makedirs(os.path.dirname(args.pairs_csv) or ".", exist_ok=True)
-    listed = pairing_list_merge(args.changed_urls, changed, result["rows"])
+    listed = pairing_list_merge(args.changed_urls, changed)
     if listed:
         logger.info("%d DEM items on the cumulative rebuild list %s",
                     listed, args.changed_urls)
