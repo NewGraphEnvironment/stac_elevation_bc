@@ -112,6 +112,25 @@ def test_laz_only_group_yields_zero_pairs_and_an_explicit_record():
     assert all(r["dsm_key"] == "" for r in result["rows"])
 
 
+def test_report_says_a_laz_only_dsm_dir_holds_no_surface_model():
+    """#53: those dsm/*.laz files are an RGB copy of the point cloud, not a DSM.
+
+    Measured in stac_pointcloud_bc#1: same bounds and points as the same-tile
+    pointcloud/*.laz, every return classed 1 and 2. The report once said these
+    deliveries "published the surface model as point cloud only", which sends
+    readers looking for surface points that are not there.
+    """
+    from dsm_pair import report_render
+    dem = fixture("lazonly_dem.txt")
+    dsm_dir_keys = fixture("lazonly_dsm_dir_keys.txt")
+    result = pairs_build(dem, [], groups_of(dsm_dir_keys))
+    report = report_render(summarize(result), result)
+
+    assert "RGB-colourised point cloud" in report
+    assert "no surface model" in report
+    assert "published the surface model" not in report
+
+
 def test_no_dsm_directory_is_distinct_from_a_laz_only_one():
     """"No dsm/ delivered" and "dsm/ holds only .laz" are different facts."""
     dem = fixture("lazonly_dem.txt")
@@ -481,3 +500,200 @@ def test_committed_dsm_groups_agree_with_the_python_parser():
         f"dsm_groups.txt - the R and Python derivations have drifted"
     )
     assert len(r_groups) >= len(parsed)
+
+
+# ---------------------------------------------------------------------------
+# The rebuild list is cumulative, and leaves only when published (#57)
+# ---------------------------------------------------------------------------
+
+def _pairs_csv_write(path, rows):
+    import csv as _csv
+    with open(path, "w", newline="") as fh:
+        w = _csv.DictWriter(fh, fieldnames=["dem_key", "dsm_key", "group",
+                                            "tile_id", "convention", "status"])
+        w.writeheader()
+        for dem_key, dsm_key in rows:
+            w.writerow({"dem_key": dem_key, "dsm_key": dsm_key, "group": "g",
+                        "tile_id": "t", "convention": "suffix" if dsm_key else "",
+                        "status": PAIRED if dsm_key else UNPAIRED})
+
+
+def _run_main(monkeypatch, *argv):
+    import dsm_pair
+    monkeypatch.setattr(sys, "argv", ["dsm_pair.py", *argv])
+    return dsm_pair.main()
+
+
+def test_the_pairing_list_accumulates_across_runs(tmp_path, monkeypatch):
+    """A run that fails after pairing still commits the new pairs csv.
+
+    The next run's diff against it is then empty, so a list rebuilt from "this
+    run's diff" would forget every URL the failed run did not publish. The list
+    must keep what an earlier run put on it -- even a URL whose DEM is missing
+    from this run's listing (code-check round 2): if this run fails, its listing
+    is restored, and a drop made here would be committed without it.
+    """
+    import csv as _csv
+    import dsm_pair
+    from stac_utils import PATH_S3
+
+    dem = fixture("suffix_dem.txt")[:3]
+    dsm = fixture("suffix_dsm.txt")
+    listing = {name: tmp_path / f"{name}.txt" for name in ("dem", "dsm", "groups")}
+    listing["dem"].write_text("".join(f"{PATH_S3}/{k}\n" for k in dem))
+    listing["dsm"].write_text("".join(f"{PATH_S3}/{k}\n" for k in dsm))
+    listing["groups"].write_text("".join(f"{g}\n" for g in groups_of(dsm)))
+    pairs = tmp_path / "pairs.csv"
+    args = ["--dem-keys", str(listing["dem"]), "--dsm-keys", str(listing["dsm"]),
+            "--dsm-groups", str(listing["groups"]), "--pairs-csv", str(pairs),
+            "--report", str(tmp_path / "report.md")]
+
+    # The previous run's pairing, as it would write it, but with no DSM for
+    # dem[0] and dem[1]: those two changed. dem[2] did not.
+    result = dsm_pair.pairs_build([f"{PATH_S3}/{k}" for k in dem],
+                                  [f"{PATH_S3}/{k}" for k in dsm], groups_of(dsm))
+    with open(pairs, "w", newline="") as fh:
+        w = _csv.DictWriter(fh, fieldnames=list(result["rows"][0]))
+        w.writeheader()
+        for i, r in enumerate(result["rows"]):
+            w.writerow({**r, "dsm_key": ""} if i < 2 else r)
+
+    # An earlier run that failed left dem[2] listed, and one this walk missed.
+    changed = tmp_path / "changed.txt"
+    missing = f"{PATH_S3}/000/000a/2020/dem/missing_from_this_walk.tif"
+    changed.write_text(f"{PATH_S3}/{dem[2]}\n{missing}\n{PATH_S3}/{dem[0]}\n")
+
+    assert _run_main(monkeypatch, *args, "--changed-urls", str(changed)) == 0
+    lines = changed.read_text().splitlines()
+    assert lines == sorted([missing, *(f"{PATH_S3}/{k}" for k in dem)])
+
+    # A run with nothing new to say keeps everything already listed.
+    assert _run_main(monkeypatch, *args, "--changed-urls", str(changed)) == 0
+    assert changed.read_text().splitlines() == lines
+
+
+def test_prune_keeps_everything_when_there_is_no_pairing_to_compare(tmp_path):
+    """A missing pairs csv must not make every dsm-less item read as done."""
+    from dsm_pair import pairing_changed_prune
+    from stac_utils import PATH_S3
+
+    url = f"{PATH_S3}/000/000a/2020/dem/bc_000a001_xli1m_utm10_2020.tif"
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    _item_write(staged, url)
+    changed = tmp_path / "changed.txt"
+    changed.write_text(f"{url}\n")
+
+    assert pairing_changed_prune(str(changed), str(staged), str(tmp_path / "absent.csv"),
+                                 str(tmp_path / "absent_listing.txt")) == (0, 1)
+    assert changed.read_text() == f"{url}\n"
+
+
+def _item_write(staged, url, dsm_href=None):
+    import json
+    from stac_utils import ASSET_DSM, url_to_item_id
+    assets = {"dem": {"href": url}}
+    if dsm_href is not None:
+        assets[ASSET_DSM] = {"href": dsm_href}
+    with open(os.path.join(staged, f"{url_to_item_id(url)}.json"), "w") as fh:
+        json.dump({"type": "Feature", "id": url_to_item_id(url), "assets": assets}, fh)
+
+
+def test_prune_drops_only_urls_whose_staged_item_carries_the_current_pairing(tmp_path):
+    """The gate decided on #74: the item is staged AND its dsm asset is the current pairing.
+
+    "A file is staged" is not enough: a stale or missing dsm on a staged item
+    means the rebuild did not carry the change, and dropping the URL then loses
+    it for good. Each case below is one that weaker rule would get wrong.
+    """
+    from dsm_pair import pairing_changed_prune
+    from stac_utils import PATH_S3, encode_url_for_gdal
+
+    def dem(n):
+        return f"000/000a/2020/dem/bc_000a00{n}_xli1m_utm10_2020.tif"
+
+    def dsm(n, tag=""):
+        return f"000/000a/2020/dsm/bc_000a00{n}_xli1m_utm10_2020{tag}_dsm.tif"
+
+    pairs = tmp_path / "pairs.csv"
+    _pairs_csv_write(pairs, [(dem(1), dsm(1)), (dem(2), dsm(2)), (dem(3), dsm(3)),
+                             (dem(4), dsm(4)), (dem(5), ""), (dem(6), "")])
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    url = {n: f"{PATH_S3}/{dem(n)}" for n in range(1, 7)}
+    _item_write(staged, url[1], encode_url_for_gdal(f"{PATH_S3}/{dsm(1)}"))  # carries it
+    # 2: paired, never staged (the rebuild dropped it)
+    _item_write(staged, url[3], encode_url_for_gdal(f"{PATH_S3}/{dsm(3, '_old')}"))  # stale dsm
+    _item_write(staged, url[4])                                              # dsm missing
+    _item_write(staged, url[5])                                              # unpaired, none: right
+    _item_write(staged, url[6], encode_url_for_gdal(f"{PATH_S3}/{dsm(6)}"))  # unpaired, has one
+    changed = tmp_path / "changed.txt"
+    changed.write_text("".join(f"{u}\n" for u in url.values()))
+    listing = tmp_path / "dem.txt"
+    listing.write_text("".join(f"{u}\n" for u in url.values()))
+
+    pruned, kept = pairing_changed_prune(str(changed), str(staged), str(pairs), str(listing))
+
+    assert (pruned, kept) == (2, 4)
+    assert changed.read_text().splitlines() == sorted([url[2], url[3], url[4], url[6]])
+
+
+def test_prune_runs_from_the_command_line_without_reading_listings(tmp_path, monkeypatch):
+    """The commit step calls it with no listings present; it must not try to pair."""
+    from stac_utils import PATH_S3, encode_url_for_gdal
+
+    dem_key = "000/000a/2020/dem/bc_000a001_xli1m_utm10_2020.tif"
+    dsm_key = "000/000a/2020/dsm/bc_000a001_xli1m_utm10_2020_dsm.tif"
+    pairs = tmp_path / "pairs.csv"
+    _pairs_csv_write(pairs, [(dem_key, dsm_key)])
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    _item_write(staged, f"{PATH_S3}/{dem_key}", encode_url_for_gdal(f"{PATH_S3}/{dsm_key}"))
+    changed = tmp_path / "changed.txt"
+    changed.write_text(f"{PATH_S3}/{dem_key}\n")
+
+    rc = _run_main(monkeypatch, "--prune-changed", str(staged), "--pairs-csv", str(pairs),
+                   "--changed-urls", str(changed), "--dem-keys", str(tmp_path / "absent.txt"))
+    assert rc == 0
+    assert changed.read_text() == ""
+
+
+def test_rebuild_select_skips_dems_absent_from_the_listing_and_caps(tmp_path):
+    """A DEM missing from this run's listing is not rebuilt (it would republish a
+    deleted tile) and not dropped either; the cap takes the first N of the rest."""
+    from dsm_pair import pairing_rebuild_select
+    from stac_utils import PATH_S3
+
+    urls = [f"{PATH_S3}/000/000a/2020/dem/bc_000a00{n}_xli1m_utm10_2020.tif" for n in range(5)]
+    changed = tmp_path / "changed.txt"
+    changed.write_text("".join(f"{u}\n" for u in urls))
+    listing = tmp_path / "dem.txt"
+    listing.write_text("".join(f"{u}\n" for u in urls if u != urls[1]))
+
+    assert pairing_rebuild_select(str(changed), str(listing), 2) == [urls[0], urls[2]]
+    assert pairing_rebuild_select(str(changed), str(listing), 10) == [urls[0], *urls[2:]]
+    assert len(changed.read_text().splitlines()) == 5
+
+
+def test_prune_drops_a_dem_that_left_the_listing_only_when_the_listing_loads(tmp_path):
+    """After a successful sync the listing commits with the prune, so the drop is safe there."""
+    from dsm_pair import pairing_changed_prune
+    from stac_utils import PATH_S3, encode_url_for_gdal
+
+    dem = "000/000a/2020/dem/bc_000a001_xli1m_utm10_2020.tif"
+    gone = f"{PATH_S3}/000/000a/2020/dem/bc_000a009_xli1m_utm10_2020.tif"
+    pairs = tmp_path / "pairs.csv"
+    _pairs_csv_write(pairs, [(dem, dem.replace("/dem/", "/dsm/"))])
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    changed = tmp_path / "changed.txt"
+    listing = tmp_path / "dem.txt"
+    listing.write_text(f"{PATH_S3}/{dem}\n")
+
+    changed.write_text(f"{PATH_S3}/{dem}\n{gone}\n")
+    assert pairing_changed_prune(str(changed), str(staged), str(pairs), str(listing)) == (1, 1)
+    assert changed.read_text() == f"{PATH_S3}/{dem}\n"
+
+    changed.write_text(f"{PATH_S3}/{dem}\n{gone}\n")
+    assert pairing_changed_prune(str(changed), str(staged), str(pairs),
+                                 str(tmp_path / "unreadable.txt")) == (0, 2)

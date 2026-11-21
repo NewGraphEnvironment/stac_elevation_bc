@@ -104,7 +104,8 @@ why the README's worked example renders `dem`-only and says so rather than swapp
 - ✅ STAC JSON validation layer (new)
 - ✅ Monthly automation via GitHub Actions (`update.yml`: cron 3rd of month + workflow_dispatch, OIDC to S3); pgstac registration is a client-side upsert in this repo (#27), still run by hand because no runner can reach the host
 - ✅ A failed or cancelled monthly run opens one `run-failed` issue, or comments on the open one (#72); before that, the 2026-11-03 failure went unseen for 17 days. The run's R dependencies come from `DESCRIPTION`, which pins `ngr@v0.0.6`: ngr's earlier tags follow spacehakr's rename to bag and cannot install
-- ✅ A failed or cancelled run does not commit the listing it detected (#63): the always() cache commit restores every file `detect_changes.R` writes unless the sync succeeded or the job succeeded without one, so the next run re-detects the same URLs. Its commit message then ends `listing withheld`. The test runs the step's own shell (`tests/test_workflow_failed_run.py`); the sync alone is the wrong predicate, because a deletions-only month can skip it and still succeed
+- ✅ Neither rebuild list loses a change a failed run did not publish (#57): `urls_pairing_changed.txt`, like `urls_footprint_changed.txt`, is cumulative. A URL leaves it only when, after a successful sync, its staged item carries the change (for the pairing: its `dsm` asset is the current pairing, or it has none where the pairing has none), or its DEM has left the listing that sync commits. At most 2000 pairing URLs are rebuilt per run, and never one whose DEM is missing from the run's listing. `item_create.py --urls-file` names every URL it drops and fails past 0.1% of the catalogue (#56)
+- ✅ A failed or cancelled run does not commit the listing it detected (#63): the always() cache commit restores every file `detect_changes.R` writes, and `dem_dsm_pairs.csv` and its report (derived from that listing), unless the sync succeeded or the job succeeded without one, so the next run re-detects the same URLs. Its commit message then ends `listing withheld`. The test runs the step's own shell (`tests/test_workflow_failed_run.py`); the sync alone is the wrong predicate, because a deletions-only month can skip it and still succeed
 - ✅ Spatial extent optimized (hardcoded BC bbox)
 
 **Goals:**
@@ -143,6 +144,7 @@ data/
 ├── dsm_pairing_report.md      # What paired, and every tile that did not
 ├── footprints.csv             # Per-tile footprint, valid %, sha256 + size (#2); empty WKT = the BCGS cell
 ├── urls_footprint_changed.txt # Published URLs whose footprint arrived after their item was built
+├── urls_pairing_changed.txt   # Published URLs whose DSM pairing changed; cumulative, pruned after sync (#57)
 ├── stac_geotiff_checks.csv    # Source validation (url, is_geotiff, is_cog)
 └── stac_item_validation.csv   # Output validation (item_id, json_valid, error)
 ```
@@ -165,8 +167,10 @@ still pairs and surfaces as `convention=unknown`, rather than dropping a DSM.
 Never construct a sibling path: `/dem/` → `/dsm/` swapping resolves in 4 of 157
 mapsheet-years and is what produced the earlier finding that BC published no
 surface models. `dsm_groups.txt` is not redundant with `urls_dsm.txt` — without it
-a `.laz`-only delivery is indistinguishable from "no DSM was delivered", which
-would misreport 1,211 real tiles.
+a `.laz`-only `dsm/` is indistinguishable from "no `dsm/` directory", which would
+misreport 1,211 tiles as `no_dsm_dir`. Neither has a surface model: the `.laz` in
+those 11 deliveries' `dsm/` is an RGB-colourised copy of the same-tile point cloud,
+not surface points (#53, measured in stac_pointcloud_bc#1).
 
 **Validation layers:**
 1. **GeoTIFF validation** (`stac_geotiff_checks.csv`) - Validates source data quality
@@ -174,6 +178,10 @@ would misreport 1,211 real tiles.
    - Detects Cloud-Optimized GeoTIFF status
    - Caches results to avoid re-validation
    - Used during item creation to skip invalid sources
+   - Each read is tried 3 times, clearing GDAL's cached failure first (a plain
+     in-process retry sends no request), and a failed re-read never downgrades a
+     row that was readable (#56); a new URL that fails every read is still
+     cached unreadable (#80)
 
 2. **STAC JSON validation** (`stac_item_validation.csv`) - Validates output data quality
    - Checks generated STAC item JSONs are valid

@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import re
+import time
 from datetime import datetime, timezone
 
 import pystac
@@ -290,6 +291,47 @@ def convention_classify(dem_basename: str, dsm_basename: str) -> str:
 # GeoTIFF Validation
 # =============================================================================
 
+# A read is retried, because a rebuild re-reads tens of thousands of published
+# tiles and a transient failure is certain at that volume (#56). A failure that
+# survives every attempt is still returned as `is_geotiff: False`; the caller
+# decides whether that may replace a row it already had.
+READ_ATTEMPTS = 3
+READ_BACKOFF_S = 2.0
+
+
+def _vsicurl_cache_clear(gdal_url: str) -> None:
+    """Forget GDAL's cached answers for one URL.
+
+    Measured 2026-11-21: GDAL caches a failed /vsicurl/ open, so an in-process
+    retry after a 503 or a 404 sent no request at all and failed at once.
+    """
+    try:
+        import rasterio.cache
+    except ImportError:          # rasterio older than the module; NON_CACHED still applies
+        return
+    rasterio.cache.invalidate(gdal_url)
+
+
+def _geotiff_read(vsicurl_path: str, env: dict) -> dict:
+    """One attempt at both remote reads: the metadata open and cog_validate's."""
+    with rasterio.Env(**env):
+        with rasterio.open(vsicurl_path) as src:
+            epsg = src.crs.to_epsg() if src.crs else None
+            height = src.height
+            width = src.width
+            transform = list(src.transform)[:6]
+            bounds = list(src.bounds)
+        is_valid, _, _ = cog_validate(vsicurl_path, quiet=True)
+    return {
+        "is_cog": is_valid,
+        "epsg": epsg,
+        "height": height,
+        "width": width,
+        "transform": json.dumps(transform),
+        "bounds": json.dumps(bounds),
+    }
+
+
 def geotiff_extract_metadata(url: str) -> dict:
     """Extract spatial metadata and validate GeoTIFF/COG status.
 
@@ -298,43 +340,40 @@ def geotiff_extract_metadata(url: str) -> dict:
     All metadata needed for STAC item creation is cached so subsequent builds
     skip remote reads entirely.
 
+    Each attempt covers both reads, and a retry first clears GDAL's cached
+    failure for the URL and opens with CPL_VSIL_CURL_NON_CACHED set to it.
+
     Returns dict with url, is_geotiff, is_cog, epsg, height, width, transform, bounds.
     """
     gdal_url = encode_url_for_gdal(url)
     vsicurl_path = f"/vsicurl/{gdal_url}"
 
-    try:
-        with rasterio.open(vsicurl_path) as src:
-            epsg = src.crs.to_epsg() if src.crs else None
-            height = src.height
-            width = src.width
-            transform = list(src.transform)[:6]
-            bounds = list(src.bounds)
+    error = None
+    for attempt in range(1, READ_ATTEMPTS + 1):
+        env = {}
+        if attempt > 1:
+            time.sleep(READ_BACKOFF_S * (attempt - 1))
+            _vsicurl_cache_clear(gdal_url)
+            env = {"CPL_VSIL_CURL_NON_CACHED": vsicurl_path}
+        try:
+            return {"url": url, "is_geotiff": True, **_geotiff_read(vsicurl_path, env)}
+        except Exception as e:
+            error = e
+            if attempt < READ_ATTEMPTS:
+                logger.info("Read %d/%d of %s failed, retrying: %s",
+                            attempt, READ_ATTEMPTS, url, e)
 
-        is_valid, _, _ = cog_validate(vsicurl_path, quiet=True)
-
-        return {
-            "url": url,
-            "is_geotiff": True,
-            "is_cog": is_valid,
-            "epsg": epsg,
-            "height": height,
-            "width": width,
-            "transform": json.dumps(transform),
-            "bounds": json.dumps(bounds),
-        }
-    except Exception as e:
-        logger.warning("Failed to read %s: %s", url, e)
-        return {
-            "url": url,
-            "is_geotiff": False,
-            "is_cog": False,
-            "epsg": None,
-            "height": None,
-            "width": None,
-            "transform": None,
-            "bounds": None,
-        }
+    logger.warning("Failed to read %s after %d attempts: %s", url, READ_ATTEMPTS, error)
+    return {
+        "url": url,
+        "is_geotiff": False,
+        "is_cog": False,
+        "epsg": None,
+        "height": None,
+        "width": None,
+        "transform": None,
+        "bounds": None,
+    }
 
 
 # =============================================================================

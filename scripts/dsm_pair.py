@@ -16,7 +16,8 @@ using a convention we have not seen still pairs, and shows up in the report as
 Every DEM lands in exactly one bucket:
   paired         - a DSM was found; the convention that relates the names is recorded
   no_raster_dsm  - the mapsheet-year's dsm/ directory holds no .tif at all
-                   (11 such deliveries publish the surface model as .laz only)
+                   (in 11 such deliveries it holds an RGB-colourised copy of
+                   the point cloud and no raster, so no surface model exists)
   no_dsm_dir     - the mapsheet-year has no dsm/ directory
   unpaired       - a raster DSM exists in the group but not for this tile
   unparseable    - no tile id could be parsed from the DEM name
@@ -24,24 +25,40 @@ Every DEM lands in exactly one bucket:
 Nothing is ever dropped silently. The counts of those five buckets sum to the
 DEM input count, and the script asserts that before writing anything.
 
+The rebuild list (--changed-urls) is CUMULATIVE (#57). Each run adds the
+DEM URLs whose pairing changed, and a URL leaves the list only through
+--prune-changed, after a successful sync: when its staged item carries the
+current pairing, or when its DEM has left the listing. A run can fail after
+pairing and still commit; a list rebuilt from "this run's diff" then depends on
+the next run re-deriving the same diff, which fails whenever the pairs csv
+commits without its listing, or the next walk differs. The list keeps every
+change until its item is published, whatever happens between.
+
 Usage:
     python scripts/dsm_pair.py                    # write pairs csv + report
     python scripts/dsm_pair.py --dry-run          # print the summary only
+    python scripts/dsm_pair.py --rebuild-select 2000   # what the rebuild builds
+    python scripts/dsm_pair.py --prune-changed DIR  # after a successful sync
 """
 
 import argparse
 import csv
+import json
 import logging
 import os
 import sys
 from collections import Counter, defaultdict
 
+from footprint_extract import urls_read
 from stac_utils import (
+    ASSET_DSM,
     PATH_S3,
     convention_classify,
+    encode_url_for_gdal,
     pair_key,
     tile_key_parse,
     url_scheme_check,
+    url_to_item_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,14 +66,16 @@ logger = logging.getLogger(__name__)
 DEM_KEYS_FILE = "data/urls_list.txt"
 DSM_KEYS_FILE = "data/urls_dsm.txt"
 # Every mapsheet-year that has a dsm/ directory, whatever it holds. Separate
-# from the raster listing so a .laz-only delivery is a declared coverage gap
-# rather than looking identical to "no DSM was delivered".
+# from the raster listing so a .laz-only dsm/ (an RGB-colourised point cloud,
+# no surface model) is a declared coverage gap rather than looking identical
+# to "no dsm/ directory was delivered".
 DSM_GROUPS_FILE = "data/dsm_groups.txt"
 PAIRS_CSV = "data/dem_dsm_pairs.csv"
 REPORT_MD = "data/dsm_pairing_report.md"
-# DEM URLs whose paired DSM changed since the last run. A surface model can
-# arrive for a DEM that is already in the catalog, and nothing else would ever
-# rebuild that item -- item_create.py only ever sees newly-listed DEM URLs.
+# DEM URLs whose paired DSM changed and whose item has not been published
+# with it yet. A surface model can arrive for a DEM that is already in the
+# catalog, and nothing else would ever rebuild that item -- item_create.py
+# only ever sees newly-listed DEM URLs. Cumulative: see the module docstring.
 CHANGED_URLS_FILE = "data/urls_pairing_changed.txt"
 
 # Statuses. `paired` is the only one that yields a dsm asset; the rest are
@@ -98,7 +117,7 @@ def dsm_group_of(key: str) -> str | None:
 
     Used for keys whose FILENAME will not parse. The group still has a raster
     DSM, and losing it would push that mapsheet-year's DEM tiles into
-    `no_raster_dsm` -- reporting "published as point cloud only" for a delivery
+    `no_raster_dsm` -- reporting "no surface model exists" for a delivery
     that shipped rasters we simply could not name.
     """
     rel = key_relative(key)
@@ -117,12 +136,14 @@ def pairs_build(dem_keys: list[str], dsm_keys: list[str],
                 dsm_dir_groups: set[str]) -> dict:
     """Match DEM keys to DSM keys. Pure -- no I/O, no network.
 
-    `dsm_keys` holds only raster (.tif) DSM keys, so a delivery that published
-    its surface model as .laz produces no keys at all and is indistinguishable
-    from one that shipped no DSM. `dsm_dir_groups` is the separate input that
+    `dsm_keys` holds only raster (.tif) DSM keys, so a delivery whose `dsm/`
+    holds only .laz produces no keys at all and is indistinguishable from one
+    that has no `dsm/` directory. `dsm_dir_groups` is the separate input that
     tells those two apart: every mapsheet-year that has a `dsm/` directory,
     whatever it contains. Without it `no_raster_dsm` is unreachable and 1,211
-    real tiles would be misreported as having had no surface model delivered.
+    tiles would be misreported as `no_dsm_dir`. Neither kind has a surface
+    model: the .laz in those `dsm/` directories is an RGB-colourised copy of
+    the same-tile point cloud (#53).
 
     Returns a dict with `rows` (one per DEM key, always), `collisions`
     (DSM keys sharing a match key, which would make pairing ambiguous) and
@@ -140,7 +161,7 @@ def pairs_build(dem_keys: list[str], dsm_keys: list[str],
             # The group still holds a raster DSM even though this filename does
             # not parse, so it must stay in dsm_groups. Otherwise a group whose
             # rasters were all unnameable would report `no_raster_dsm` -- a
-            # declared "point cloud only" gap for a delivery that shipped
+            # declared "no surface model" gap for a delivery that shipped
             # rasters, which is the reclassification this design forbids.
             group = dsm_group_of(key)
             if group:
@@ -267,6 +288,149 @@ def pairing_changed(rows: list[dict], previous_csv: str) -> list[str]:
     ]
 
 
+def dsm_lookup_load(path: str = PAIRS_CSV) -> dict[str, str]:
+    """Map each DEM URL to its paired DSM URL, from this script's pairs csv.
+
+    A missing pairs file returns an empty lookup and logs a warning rather than
+    aborting: items are still valid without the second asset, and the DEM build
+    is the more important of the two. It is a warning and not silence because
+    "every item lost its dsm asset" and "there genuinely are no pairs" must not
+    look the same in a log.
+
+    Only `paired` rows yield an asset. Every other status - no_raster_dsm,
+    no_dsm_dir, unpaired, unparseable - is a declared gap recorded in
+    data/dsm_pairing_report.md, not something to guess at here.
+
+    Lives here, beside the writer of the csv it reads; item_create.py imports
+    it, and so does the rebuild-list prune below, so the item a rebuild writes
+    and the test that releases it from the list read one lookup.
+    """
+    if not os.path.exists(path):
+        logger.warning("No DSM pairs file at %s - items will be built with no "
+                       "dsm asset. Run scripts/dsm_pair.py first.", path)
+        return {}
+
+    lookup = {}
+    with open(path, newline="") as fh:
+        for row in csv.DictReader(fh):
+            if row["status"] != PAIRED or not row["dsm_key"]:
+                continue
+            lookup[f"{PATH_S3}/{row['dem_key']}"] = f"{PATH_S3}/{row['dsm_key']}"
+
+    if not lookup:
+        logger.warning("DSM pairs file %s contained no paired rows", path)
+    else:
+        logger.info("Loaded %d DEM->DSM pairs from %s", len(lookup), path)
+    return lookup
+
+
+def pairing_changed_prune(path: str, staged_dir: str, pairs_csv: str = PAIRS_CSV,
+                          dem_keys_path: str = DEM_KEYS_FILE) -> tuple[int, int]:
+    """Drop from the rebuild list every URL whose staged item carries its pairing. (pruned, kept)
+
+    Called only after a successful sync, so a staged item is a published one.
+    "Carries its pairing" is the property itself (decided on #74): the item
+    JSON is staged, and its `dsm` asset href is the current pairing's DSM,
+    encoded as item_create writes it -- or it has no `dsm` asset where the
+    current pairing has none. Not "the rebuild step exited 0": item_create
+    drops a URL it fails on and still exits 0. Not "a file is staged" either:
+    a staged item with a stale or missing dsm did not carry the change. A URL
+    that keeps failing stays listed and is retried every run, visibly. Same
+    shape as footprint_extract.changed_prune.
+
+    A URL whose DEM is no longer in the listing also leaves: it was deleted
+    upstream and is never rebuilt (--rebuild-select). This is the safe place
+    for that drop, because the prune runs only after a successful sync, so the
+    listing that justifies it is committed in the same commit.
+    """
+    if not os.path.exists(path):
+        return 0, 0
+    urls = urls_read(path)
+    lookup = dsm_lookup_load(pairs_csv)
+    if not lookup:
+        # No pairs to compare against: every item without a dsm would read as
+        # "carries its pairing", and the list would empty on a failed read.
+        logger.warning("No paired rows in %s - keeping all %d listed URLs", pairs_csv,
+                       len(set(urls)))
+        return 0, len(set(urls))
+
+    def done(u):
+        p = os.path.join(staged_dir, f"{url_to_item_id(u)}.json")
+        if not os.path.exists(p):
+            return False
+        with open(p) as fh:
+            body = json.load(fh)
+        asset = (body.get("assets") or {}).get(ASSET_DSM)
+        want = lookup.get(u)
+        if want is None:
+            return asset is None
+        return asset is not None and asset.get("href") == encode_url_for_gdal(want)
+
+    current = dem_urls_current(dem_keys_path)
+    gone = {u for u in urls if current is not None and u not in current}
+    if gone:
+        logger.info("%d listed URLs left the DEM listing - dropped: %s", len(gone),
+                    ", ".join(sorted(gone)[:5]))
+    kept = sorted({u for u in urls if u not in gone and not done(u)})
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as fh:
+        fh.writelines(f"{u}\n" for u in kept)
+    os.replace(tmp, path)
+    return len(set(urls)) - len(kept), len(kept)
+
+
+def pairing_list_merge(path: str, changed: list[str]) -> int:
+    """Add this run's changed DEM keys to the cumulative rebuild list. Returns its length.
+
+    Never drops what is listed: the list holds every change not yet published,
+    and only --prune-changed, after a successful sync, takes a URL off. Not even
+    a URL whose DEM is missing from this run's listing: if the run then fails,
+    its listing is restored (#63) but a drop made here would commit, and the
+    change would be lost for good when the DEM reappears. --rebuild-select
+    keeps such a URL out of the rebuild instead. Written to a tmp file and
+    renamed, so a kill mid-write leaves the old list whole.
+    """
+    prior = set(urls_read(path)) if os.path.exists(path) else set()
+    listed = sorted(prior | {f"{PATH_S3}/{k}" for k in changed})
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as fh:
+        fh.writelines(f"{u}\n" for u in listed)
+    os.replace(tmp, path)
+    return len(listed)
+
+
+def dem_urls_current(dem_keys_path: str) -> set[str] | None:
+    """This run's DEM listing as URLs, or None when it cannot be read."""
+    try:
+        return set(keys_load(dem_keys_path, "DEM"))
+    except ListingError as e:
+        logger.warning("%s - not filtering the rebuild list by the DEM listing", e)
+        return None
+
+
+def pairing_rebuild_select(path: str, dem_keys_path: str, limit: int) -> list[str]:
+    """The first `limit` listed URLs whose DEM is in this run's listing.
+
+    A URL whose DEM left the listing is not rebuilt -- that would republish a
+    tile deleted upstream (#28 owns those) -- but it stays listed: the prune
+    removes it after a sync whose listing commits with it.
+    """
+    if not os.path.exists(path):
+        return []
+    urls = sorted(set(urls_read(path)))
+    current = dem_urls_current(dem_keys_path)
+    if current is not None:
+        absent = [u for u in urls if u not in current]
+        if absent:
+            logger.warning("%d listed URLs are not in the DEM listing - not rebuilt: %s",
+                           len(absent), ", ".join(absent[:5]))
+        urls = [u for u in urls if u in current]
+    if len(urls) > limit:
+        logger.warning("%d listed URLs to rebuild - taking the first %d; the rest stay "
+                       "listed for later runs", len(urls), limit)
+    return urls[:limit]
+
+
 def summarize(result: dict) -> dict:
     """Counts by status and, for paired rows, by naming convention."""
     rows = result["rows"]
@@ -318,8 +482,9 @@ def report_render(summary: dict, result: dict) -> str:
     lines += [
         f"## Mapsheet-years with a `dsm/` directory but no raster ({len(groups)})",
         "",
-        "These deliveries published the surface model as point cloud only. This",
-        "is a declared coverage gap, not a pairing failure.",
+        "These deliveries' `dsm/` directory holds an RGB-colourised point cloud",
+        "and no raster, so no surface model exists for them. This is a declared",
+        "coverage gap, not a pairing failure.",
         "",
     ]
     lines += [f"- `{g}`" for g in groups] or ["- none"]
@@ -371,8 +536,8 @@ def report_render(summary: dict, result: dict) -> str:
         lines += [
             "These rasters exist but could not be named, so they pair with",
             "nothing. Their mapsheet-year still counts as having a raster DSM,",
-            "so its DEM tiles report as `unpaired` rather than as a point-cloud",
-            "-only coverage gap. Sample:",
+            "so its DEM tiles report as `unpaired` rather than as a",
+            "`no_raster_dsm` coverage gap. Sample:",
             "",
         ]
         lines += [f"- `{key_relative(k)}`" for k in dsm_unparse[:10]]
@@ -428,11 +593,29 @@ def main() -> int:
     parser.add_argument("--changed-urls", default=CHANGED_URLS_FILE)
     parser.add_argument("--dry-run", action="store_true",
                         help="Print the summary without writing outputs")
+    parser.add_argument("--rebuild-select", metavar="N", type=int, default=None,
+                        help="Print the first N URLs on --changed-urls whose DEM is in "
+                             "--dem-keys, one per line, then exit")
+    parser.add_argument("--prune-changed", metavar="STAGED_DIR", default=None,
+                        help="After a successful sync: drop from --changed-urls every URL "
+                             "whose item in STAGED_DIR carries the current pairing, then exit")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s [%(levelname)s] %(message)s",
                         datefmt="%H:%M:%S")
+
+    if args.rebuild_select is not None:
+        sys.stdout.writelines(f"{u}\n" for u in pairing_rebuild_select(
+            args.changed_urls, args.dem_keys, args.rebuild_select))
+        return 0
+
+    if args.prune_changed:
+        pruned, kept = pairing_changed_prune(args.changed_urls, args.prune_changed,
+                                             args.pairs_csv, args.dem_keys)
+        logger.info("Pairing rebuild list: %d published and pruned, %d kept for the "
+                    "next run", pruned, kept)
+        return 0
 
     try:
         dem_keys = keys_load(args.dem_keys, "DEM")
@@ -475,8 +658,10 @@ def main() -> int:
         logger.info("No pairing changes since the last run")
 
     os.makedirs(os.path.dirname(args.pairs_csv) or ".", exist_ok=True)
-    with open(args.changed_urls, "w") as fh:
-        fh.write("".join(f"{PATH_S3}/{k}\n" for k in changed))
+    listed = pairing_list_merge(args.changed_urls, changed)
+    if listed:
+        logger.info("%d DEM items on the cumulative rebuild list %s",
+                    listed, args.changed_urls)
 
     with open(args.pairs_csv, "w", newline="") as fh:
         writer = csv.DictWriter(

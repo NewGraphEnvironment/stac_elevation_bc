@@ -27,8 +27,9 @@ a tile's DSM silently.
 
 ## Mapsheet-years with a `dsm/` directory but no raster (11)
 
-These deliveries published the surface model as point cloud only. This
-is a declared coverage gap, not a pairing failure.
+These deliveries' `dsm/` directory holds an RGB-colourised point cloud
+and no raster, so no surface model exists for them. This is a declared
+coverage gap, not a pairing failure.
 
 - `082/082e/2018`
 - `082/082e/2019`

@@ -15,7 +15,6 @@ Usage:
 
 import argparse
 import concurrent.futures
-import csv
 import glob
 import logging
 import os
@@ -28,8 +27,9 @@ from datetime import datetime, timezone
 from pystac import Link, RelType
 from tqdm import tqdm
 
-from dsm_pair import PAIRED, PAIRS_CSV
+from dsm_pair import dsm_lookup_load
 from item_fields import footprints_load, has_footprint, pystac_item_fields_apply
+from item_rewrite import ERROR_ABS_MAX, ERROR_RATE_MAX, error_tolerable
 from stac_utils import (
     ASSET_DEM,
     ASSET_DSM,
@@ -42,49 +42,12 @@ from stac_utils import (
     get_output_dir,
     url_scheme_check,
     url_to_item_id,
-    PATH_S3,
     PATH_S3_JSON,
     PATH_S3_STAC,
     PATH_RESULTS_CSV,
 )
 
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# DSM Pairing
-# =============================================================================
-
-def dsm_lookup_load(path: str = PAIRS_CSV) -> dict[str, str]:
-    """Map each DEM URL to its paired DSM URL, from scripts/dsm_pair.py output.
-
-    A missing pairs file returns an empty lookup and logs a warning rather than
-    aborting: items are still valid without the second asset, and the DEM build
-    is the more important of the two. It is a warning and not silence because
-    "every item lost its dsm asset" and "there genuinely are no pairs" must not
-    look the same in a log.
-
-    Only `paired` rows yield an asset. Every other status - no_raster_dsm,
-    no_dsm_dir, unpaired, unparseable - is a declared gap recorded in
-    data/dsm_pairing_report.md, not something to guess at here.
-    """
-    if not os.path.exists(path):
-        logger.warning("No DSM pairs file at %s - items will be built with no "
-                       "dsm asset. Run scripts/dsm_pair.py first.", path)
-        return {}
-
-    lookup = {}
-    with open(path, newline="") as fh:
-        for row in csv.DictReader(fh):
-            if row["status"] != PAIRED or not row["dsm_key"]:
-                continue
-            lookup[f"{PATH_S3}/{row['dem_key']}"] = f"{PATH_S3}/{row['dsm_key']}"
-
-    if not lookup:
-        logger.warning("DSM pairs file %s contained no paired rows", path)
-    else:
-        logger.info("Loaded %d DEM->DSM pairs from %s", len(lookup), path)
-    return lookup
 
 
 # =============================================================================
@@ -244,10 +207,13 @@ def load_validation_cache(urls_to_check: list[str]) -> dict:
     urls_to_validate = [url for url in urls_to_check
                         if url not in existing_urls
                         or url in needs_upgrade]
+    # Old rows set aside, not discarded: a re-read that fails puts its row back.
+    df_upgrading = df_existing.iloc[0:0]
     if needs_upgrade:
         # Drop old rows that will be re-extracted with spatial metadata
         urls_upgrading = needs_upgrade & set(urls_to_validate)
         if urls_upgrading:
+            df_upgrading = df_existing[df_existing["url"].isin(urls_upgrading)]
             df_existing = df_existing[
                 ~df_existing["url"].isin(urls_upgrading)
             ]
@@ -265,7 +231,21 @@ def load_validation_cache(urls_to_check: list[str]) -> dict:
                 desc="Extracting GeoTIFF metadata"
             ))
 
-        df_new = pd.DataFrame(new_results)
+        # A row that was a readable GeoTIFF is never downgraded by a read that
+        # failed (#56). The read is retried, but a failure that survives every
+        # attempt is far likelier to be the network than the tile, and the
+        # committed False row would drop a published tile from every later
+        # build. Its old row goes back, and it is re-read next run.
+        kept = {r["url"] for r in new_results
+                if not r["is_geotiff"]} & set(df_upgrading["url"])
+        if kept:
+            logger.warning("%d previously readable GeoTIFFs failed their re-read; their "
+                           "cached rows are kept, not marked unreadable: %s",
+                           len(kept), ", ".join(sorted(kept)))
+            new_results = [r for r in new_results if r["url"] not in kept]
+        df_new = pd.concat([pd.DataFrame(new_results, columns=all_columns),
+                            df_upgrading[df_upgrading["url"].isin(kept)]],
+                           ignore_index=True)
         df_all = pd.concat([df_existing, df_new], ignore_index=True) if len(df_existing) > 0 else df_new
         df_all.to_csv(PATH_RESULTS_CSV, index=False)
         logger.info("Saved %d validation results to %s", len(df_all), PATH_RESULTS_CSV)
@@ -284,6 +264,39 @@ def load_validation_cache(urls_to_check: list[str]) -> dict:
                 entry[col] = None
         result[row["url"]] = entry
     return result
+
+
+def drops_judge(dropped: list[str], processed: int, population: int) -> int:
+    """Name every URL a --urls-file rebuild dropped, and gate on how many. Returns an exit code.
+
+    A rebuild drops a URL it could not build (process_item returned None), and
+    exited 0 regardless, so a drop was silent (#56). Every drop is now logged
+    by URL and annotated on the run.
+
+    The gate is item_rewrite.error_tolerable, measured against the published
+    catalogue (`population`), not this run's list: the rebuild lists are
+    cumulative, so a tile that can never be read stays on them, and against a
+    short list that one tile would fail every month, skip every sync and hold
+    back every month's new items. Against the catalogue it is what it is: one
+    tile in ~100k. A population of 0 (a collection with no item links) falls
+    back to the list's own length, and says so.
+    """
+    if not dropped:
+        return 0
+    for url in dropped:
+        logger.warning("Dropped from rebuild (not built): %s", url)
+    print(f"::warning title=Rebuild dropped items::{len(dropped)} of {processed} listed "
+          f"URLs were not built; each is named in the log", flush=True)
+    if population <= 0:
+        logger.warning("Collection has no item links - judging the drop rate against "
+                       "the %d listed URLs", processed)
+    if error_tolerable(len(dropped), processed, population):
+        logger.warning("%d dropped: within tolerance (%.2f%% / %d of %d)", len(dropped),
+                       100 * ERROR_RATE_MAX, ERROR_ABS_MAX, population or processed)
+        return 0
+    logger.error("%d dropped: ABOVE tolerance (%.2f%% / %d of %d) - failing the run",
+                 len(dropped), 100 * ERROR_RATE_MAX, ERROR_ABS_MAX, population or processed)
+    return 1
 
 
 # =============================================================================
@@ -360,6 +373,7 @@ def main():
     elif args.incremental or args.urls_file:
         existing_item_count = len([l for l in collection.links if l.rel == 'item'])
         logger.info("Appending to %d existing items", existing_item_count)
+    published = len([l for l in collection.links if l.rel == 'item'])
 
     # Pre-validation
     results_lookup = load_validation_cache(urls_to_check)
@@ -420,6 +434,10 @@ def main():
     collection.save_object(dest_href=path_collection)
     logger.info("Collection saved to %s", path_collection)
 
+    if args.urls_file:
+        built = {r["id"] for r in results}
+        dropped = [u for u in urls_to_check if url_to_item_id(u) not in built]
+        return drops_judge(dropped, len(urls_to_check), published)
     return 0
 
 

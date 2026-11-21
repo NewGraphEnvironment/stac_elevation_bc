@@ -16,7 +16,10 @@ name: Monthly incremental update
 # it does not keep is any claim of publication it cannot back: the rewrite
 # manifests are discarded unless the sync succeeded, and the detected listing
 # (every file detect_changes.R writes) is restored unless the sync succeeded or
-# the run succeeded without one, so the next run re-detects the same URLs (#63).
+# the run succeeded without one, so the next run re-detects the same URLs (#63);
+# the pairs csv and its report, derived from that listing, are restored with it.
+# The two rebuild lists commit either way: they are cumulative, and a URL leaves
+# one only after a successful sync (#57, #2).
 # pgstac registration is NOT done here: no runner can reach the STAC host (no
 # tailnet, no deploy key). It is a client-side upsert run from a machine that
 # can - `stacs register --config stacs.toml --mode drift` (#49) - and it is
@@ -286,18 +289,41 @@ jobs:
             echo "::warning title=Item shortfall::created $CREATED of $NEW new items - some source URLs failed metadata extraction or were invalid; see run-logs artifact and the triage notes in scripts/README.md"
           fi
 
+      # The pairing rebuild list is cumulative (#57): dsm_pair.py appends to
+      # it, and only the commit step's prune, after a successful sync, takes a
+      # URL off. A URL a failed run left on it is still owed a rebuild on a
+      # month with no upstream change, so `pending` drives the rebuild,
+      # publish and commit steps below the way the footprint step's does.
+      - name: Check the pairing rebuild list
+        id: pairing
+        if: steps.detect.outcome == 'success'
+        run: |
+          if [ -s data/urls_pairing_changed.txt ]; then
+            echo "pairing rebuild list: $(wc -l < data/urls_pairing_changed.txt | tr -d ' ') URL(s) not yet published with their pairing"
+            echo "pending=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # A DSM can arrive for a DEM already in the catalog, and a footprint can
       # arrive for an item built without one (#2). Nothing else would rebuild
       # those items -- item_create.py otherwise only ever sees newly-listed DEM
-      # URLs -- so both diffs drive one rebuild pass. Each file is written empty
-      # when nothing changed, so the step is a cheap no-op.
+      # URLs -- so both lists drive one rebuild pass. Both are cumulative: a URL
+      # stays listed until the commit step's prune finds its item published, so
+      # the step is a cheap no-op only when both are empty.
       - name: Rebuild items whose DSM pairing or footprint changed
         id: rebuild
-        if: steps.detect.outputs.changes == 'true' || steps.footprints.outputs.pending == 'true'
+        if: >-
+          steps.detect.outputs.changes == 'true' || steps.footprints.outputs.pending == 'true'
+          || steps.pairing.outputs.pending == 'true'
         run: |
-          # The pairing list only when this run re-paired: dsm_pair writes it on
-          # runs with upstream changes, and on a footprint-only run the
-          # committed file is the last change-month's -- already published.
+          # The pairing list whenever it is non-empty: it is cumulative (#57),
+          # so everything on it is a pairing change not yet published, whether
+          # this run re-paired or an earlier run failed before its sync. At
+          # most 2000 per run, for the footprint list's reason: a list too long
+          # to rebuild inside the job timeout would time out every month once
+          # kept. The rest stay listed; the prune drains it. --rebuild-select
+          # also leaves out a URL whose DEM is not in this run's listing, which
+          # would republish a tile deleted upstream; it stays listed until a
+          # run that syncs, whose prune drops it with its listing committed.
           #
           # The footprint list is skipped on the footprint dispatch, which
           # rewrites every published item itself, and when it is too long to
@@ -316,12 +342,20 @@ jobs:
           else
             LISTS+=(data/urls_footprint_changed.txt)
           fi
-          if [ "${{ steps.detect.outputs.changes }}" = "true" ] || [ "${{ inputs.backfill }}" = "true" ]; then
-            LISTS+=(data/urls_pairing_changed.txt)
+          N_PAIR=0
+          if [ -f data/urls_pairing_changed.txt ]; then N_PAIR=$(wc -l < data/urls_pairing_changed.txt | tr -d ' '); fi
+          if [ "$N_PAIR" -gt 2000 ]; then
+            echo "::warning title=Pairing rebuild list long::$N_PAIR URLs - rebuilding at most 2000; the rest stay listed for later runs"
           fi
-          for f in "${LISTS[@]}"; do
-            if [ -f "$f" ]; then cat "$f"; fi
-          done | sort -u > "$RUNNER_TEMP/urls_rebuild.txt"
+          # Its own file first, so a failing select fails the step under bash -e
+          # rather than vanishing inside a pipeline.
+          .venv/bin/python scripts/dsm_pair.py --rebuild-select 2000 > "$RUNNER_TEMP/urls_pairing_select.txt"
+          {
+            for f in "${LISTS[@]}"; do
+              if [ -f "$f" ]; then cat "$f"; fi
+            done
+            cat "$RUNNER_TEMP/urls_pairing_select.txt"
+          } | sort -u > "$RUNNER_TEMP/urls_rebuild.txt"
           if [ -s "$RUNNER_TEMP/urls_rebuild.txt" ]; then
             echo "rebuilding $(wc -l < "$RUNNER_TEMP/urls_rebuild.txt") items"
             if [ ! -s "$STAC_OUTPUT_DIR/collection.json" ]; then
@@ -391,6 +425,7 @@ jobs:
         id: publish
         if: >-
           steps.detect.outputs.changes == 'true' || steps.footprints.outputs.pending == 'true'
+          || steps.pairing.outputs.pending == 'true'
           || inputs.backfill || inputs.rename || inputs.footprint
         run: |
           TOTAL=$(find "$STAC_OUTPUT_DIR" -maxdepth 1 -type f -name "*.json" ! -name "collection.json" | wc -l | tr -d ' ')
@@ -542,6 +577,7 @@ jobs:
       - name: Commit refreshed caches
         if: >-
           always() && (steps.detect.outputs.changes == 'true' || steps.footprints.outputs.pending == 'true'
+          || steps.pairing.outputs.pending == 'true'
           || inputs.backfill || inputs.rename || inputs.footprint)
         env:
           JOB_STATUS: ${{ job.status }}
@@ -592,8 +628,14 @@ jobs:
           # attempted"). A failed or cancelled run -- this step is always(), so
           # a hand cancel and the job timeout land here too -- restores every
           # file detect_changes.R writes, and the next run re-detects the same
-          # URLs. The other caches (validation, footprints) still commit: each
-          # records a fact about a source, not that its item was published.
+          # URLs. The pairs csv and its report go back with them: they are
+          # derived from the whole listing, and a pairing committed without its
+          # listing would be used unrecomputed by a next run that detects no
+          # change, rebuilding listed items with the wrong dsm (#57 review).
+          # The other caches (validation, footprints) still commit: each
+          # records a fact about one source, not that its item was published.
+          # So does the cumulative pairing list, which only ever gains a URL
+          # before the sync.
           # The commit message says so, or a failed month's cache commit reads
           # in the ledger exactly like a month that built its tiles.
           WITHHELD=""
@@ -602,7 +644,8 @@ jobs:
                  "restoring the detected listing so the next run re-detects it"
             WITHHELD="; run $JOB_STATUS, listing withheld"
             for f in data/urls_list.txt data/urls_dsm.txt data/dsm_groups.txt \
-                     data/urls_new.txt data/urls_deleted.txt; do
+                     data/urls_new.txt data/urls_deleted.txt \
+                     data/dem_dsm_pairs.csv data/dsm_pairing_report.md; do
               git reset -q -- "$f" || true
               if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
                 git checkout -q -- "$f"
@@ -620,9 +663,30 @@ jobs:
           # on and still exits 0. So prune exactly the URLs whose item was
           # staged, and only after the sync that uploaded them succeeded.
           if [ "${{ steps.sync.outcome }}" = "success" ] && [ -s data/urls_footprint_changed.txt ]; then
-            .venv/bin/python scripts/footprint_extract.py \
-              --prune-changed "$STAC_OUTPUT_DIR" --changed-out data/urls_footprint_changed.txt
+            # A prune that fails must not abort this step under bash -e: that
+            # would lose every cache the run refreshed. Both prunes write
+            # through a tmp file and os.replace, so a failure leaves the list
+            # whole, and it is retried next run.
+            if ! .venv/bin/python scripts/footprint_extract.py \
+                --prune-changed "$STAC_OUTPUT_DIR" --changed-out data/urls_footprint_changed.txt; then
+              echo "::warning title=Footprint prune failed::the rebuild list is kept unpruned; the next run retries"
+            fi
             git add data/urls_footprint_changed.txt
+          fi
+
+          # The pairing rebuild list is cumulative in the same way (#57): the
+          # pairs csv is re-derived and diffed only on a run that detects a
+          # change, so a URL a run listed may never be listed again (a later
+          # walk can differ, and the 2000 cap carries URLs over); it stays
+          # until its item is published. A URL leaves only after
+          # a successful sync: when its staged item carries the current pairing
+          # (its dsm asset is the paired DSM, or it has none where the pairing
+          # has none), or when its DEM has left the listing this commit keeps.
+          if [ "${{ steps.sync.outcome }}" = "success" ] && [ -s data/urls_pairing_changed.txt ]; then
+            if ! .venv/bin/python scripts/dsm_pair.py --prune-changed "$STAC_OUTPUT_DIR"; then
+              echo "::warning title=Pairing prune failed::the rebuild list is kept unpruned; the next run retries"
+            fi
+            git add data/urls_pairing_changed.txt
           fi
 
           if git diff --cached --quiet; then
