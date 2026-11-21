@@ -107,6 +107,8 @@ why the README's worked example renders `dem`-only and says so rather than swapp
 - ✅ Neither rebuild list loses a change a failed run did not publish (#57): `urls_pairing_changed.txt`, like `urls_footprint_changed.txt`, is cumulative. A URL leaves it only when, after a successful sync, its staged item carries the change (for the pairing: its `dsm` asset is the current pairing, or it has none where the pairing has none), or its DEM has left the listing that sync commits. At most 2000 pairing URLs are rebuilt per run, and never one whose DEM is missing from the run's listing. `item_create.py --urls-file` names every URL it drops and fails past 0.1% of the catalogue (#56)
 - ✅ A failed or cancelled run does not commit the listing it detected (#63): the always() cache commit restores every file `detect_changes.R` writes, and `dem_dsm_pairs.csv` and its report (derived from that listing), unless the sync succeeded or the job succeeded without one, so the next run re-detects the same URLs. Its commit message then ends `listing withheld`. The test runs the step's own shell (`tests/test_workflow_failed_run.py`); the sync alone is the wrong predicate, because a deletions-only month can skip it and still succeed
 - ✅ Spatial extent optimized (hardcoded BC bbox)
+- ✅ Temporal extent widened on every monthly patch (#70): `collection_patch.py --extent-from data/urls_list.txt`
+  never narrows it, because retained items (#28) predate the listing's earliest date
 
 **Goals:**
 1. ~~Reduce full processing time to ~1-1.5 hours~~ → **Reality: 5-6 hours** (network I/O limited)
@@ -123,8 +125,10 @@ why the README's worked example renders `dem`-only and says so rather than swapp
 - **Issue #3:** Proper GeoTIFF validation and media type assignment
 - **stacs** (NewGraphEnvironment/stacs#1, formerly #37): registration and verification
   are the public `stacs` package, adopted at `v0.1.0` (#49) and configured by
-  `stacs.toml`. Change them there, not here; bump the tag in `environment.yml` and
-  `update.yml` together (`tests/test_stacs_config.py` checks both).
+  `stacs.toml`. Change them there, not here. The tag lives in `pyproject.toml`
+  (`[tool.uv.sources]`); bump it there and run `uv lock`, since the workflow installs
+  with `uv sync --locked` (`tests/test_stacs_config.py` checks pyproject, the lock and
+  the installed copy). `stacs.toml` also declares the `lidarbc:delivery` queryable (#62).
 - **Point clouds** go to a separate repo `stac_pointcloud_bc` and bucket
   `stac-pointcloud-bc` (decided 2026-09-30; bucket provisioned in the infrastructure repo); it was
   blocked on stacs#1, which landed as v0.1.0 (2026-10-06). The repo exists (2026-10-07) and #35 moved there as NewGraphEnvironment/stac_pointcloud_bc#1. CHM stays here as a third asset (#47).
@@ -370,7 +374,10 @@ WHY: Reprocessing same URLs (e.g., after failures, testing) would create duplica
 - **Lesson:** Always implement monitoring/change detection for external data sources, even if "stable"
 
 ### Dependencies
-- Python: pystac, rio_stac, rasterio, rio-cogeo, pandas, tqdm, concurrent.futures (built-in)
+- Python: declared in `pyproject.toml`, locked in `uv.lock` (#16); `uv sync` builds `.venv`,
+  which the scripts, the tests and the workflow call by path. The lock was held to what the
+  monthly run resolved on 2026-11-21; there is no conda environment
+- Python packages: pystac, rio_stac, rasterio, rio-cogeo, pandas, tqdm, stacs, concurrent.futures (built-in)
 - System: rio CLI tools (rasterio[cogeo])
 - Infrastructure: DigitalOcean VM, S3 (stac-dem-bc), PgSTAC
 

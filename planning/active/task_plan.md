@@ -75,12 +75,12 @@ Approved by the owner at the plan gate, 2026-11-21.
 
 ## Phase 3: docs
 
-- [ ] `CLAUDE.md`: stacs pin lives in `pyproject.toml` + `uv.lock` (line ~126 and Related Work);
+- [x] `CLAUDE.md`: stacs pin lives in `pyproject.toml` + `uv.lock` (line ~126 and Related Work);
       Python setup is `uv sync`; drop `environment.yml` from Dependencies
-- [ ] `scripts/README.md` prerequisites + "After the Pipeline" (`pinned by tag in pyproject.toml`)
-- [ ] `README.Rmd` / `README.md` roadmap: drop the #16 line (text edit in both; no render — move 3 renders)
-- [ ] `.qmd` `use_condaenv` → `use_virtualenv(".venv")` (3 files)
-- [ ] `NEWS.md` Unreleased: uv; stacs v0.6.0; queryable; extent widened to 2026-05-06 — published by
+- [x] `scripts/README.md` prerequisites + "After the Pipeline" (`pinned by tag in pyproject.toml`)
+- [x] `README.Rmd` / `README.md` roadmap: drop the #16 line (text edit in both; no render — move 3 renders)
+- [x] `.qmd` `use_condaenv` → `use_virtualenv(".venv")` (3 files)
+- [x] `NEWS.md` Unreleased: uv; stacs v0.6.0; queryable; extent widened to 2026-05-06 — published by
       the register after merge
 
 ## Owed at the end (reported, done after merge)

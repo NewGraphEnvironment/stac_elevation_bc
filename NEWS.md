@@ -11,6 +11,26 @@ matching `water-temp-bc`. Releases live here and in git tags.
 
 ## Unreleased
 
+**Catalogue change (#70, #62)**, published by one `stacs register --mode drift` after this
+merges. Until that register runs, the API serves the collection as before.
+
+- The collection's temporal extent ends **2026-05-06**, the latest delivery, where it ended
+  2025-06-05 while the collection served 2026 items. Every monthly run now widens it to cover
+  the listing it detected (`collection_patch.py --extent-from`), and never narrows it: items
+  whose source left the objectstore are kept (#28), and the published start, 2011-09-14, is
+  earlier than any date in today's listing.
+- `lidarbc:delivery` is declared as a queryable, so it is listed at
+  `/collections/stac-elevation-bc/queryables` beside the same key stac-pointcloud-bc declares.
+
+**Python installs from a lockfile (#16).** `pyproject.toml` and `uv.lock` replace
+`environment.yml`, which declared only `python` and `pip` and so was conda in name only. The
+lock holds every package at the version the 2026-11-21 monthly run installed, so the run's
+packages do not change. `uv sync` builds `.venv`; the monthly workflow installs with
+`uv sync --locked`. stacs moves from v0.1.0 to v0.6.0, which loads the queryable. Between the
+two, by-hand runs gain a check that each load reached the `stac` database, and
+`register --dryrun` now probes the host and the API; the rest concern receipts (this catalogue declares none) and hrefs outside the
+collection's scheme (every href here is https).
+
 **The repo is renamed `stac_dem_bc` → `stac_elevation_bc` (#40).** It now matches the
 collection it publishes. Nothing in the catalogue changes: the collection is still
 `stac-elevation-bc`, the bucket is still `stac-dem-bc`, and item ids and hrefs are as

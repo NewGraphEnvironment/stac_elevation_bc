@@ -194,7 +194,7 @@ The bottleneck is network: each GeoTIFF must be partially read over HTTP to extr
 
 | Component | What's needed |
 |-----------|---------------|
-| Python | ≥ 3.11; `pystac`, `rio_stac`, `rasterio`, `rio-cogeo`, `pandas`, `tqdm`, and [`stacs`](https://github.com/NewGraphEnvironment/stacs) for registration (pinned tag; see `environment.yml`) |
+| Python | ≥ 3.12, from [`uv`](https://docs.astral.sh/uv/): `uv sync` at the repo root builds `.venv` from `uv.lock` (`pystac`, `rio_stac`, `rasterio`, `rio-cogeo`, `pandas`, `tqdm`, and [`stacs`](https://github.com/NewGraphEnvironment/stacs) for registration, pinned by tag in `pyproject.toml`) |
 | R | `ngr` package (for objectstore listing) |
 | AWS CLI | Configured with write access to `s3://stac-dem-bc` |
 | System | `rio` CLI tools (installed with rasterio) |
@@ -226,7 +226,7 @@ The bottleneck is network: each GeoTIFF must be partially read over HTTP to extr
 
 ## After the Pipeline
 
-Once the catalog is on S3, register it in pgstac to make it searchable. Registration and verification are the [`stacs`](https://github.com/NewGraphEnvironment/stacs) package (#49), pinned by tag in `environment.yml` and the workflow, and this catalogue declares itself to it in [`stacs.toml`](../stacs.toml) at the repo root. One command from any machine with tailnet SSH to the STAC host:
+Once the catalog is on S3, register it in pgstac to make it searchable. Registration and verification are the [`stacs`](https://github.com/NewGraphEnvironment/stacs) package (#49), pinned by tag in `pyproject.toml` and locked in `uv.lock`, which the workflow installs from, and this catalogue declares itself to it in [`stacs.toml`](../stacs.toml) at the repo root. One command from any machine with tailnet SSH to the STAC host:
 
 ```bash
 .venv/bin/stacs verify   --config stacs.toml --out-dir verify_report/   # is the API behind S3, or serving stale bodies? changes nothing
