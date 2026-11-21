@@ -79,3 +79,34 @@ item is retried next run (#56), and the extent never claims less than the collec
 
 Mutations: dropping the `lo < start` comparison (always replace the start) fails 6 extent
 tests, `test_never_shrinks` among them; dropping `--extent-from` from the workflow fails its pin.
+
+## Plan review (Plan agent, spawned 21:48Z, delivered ~21:55Z), folded in
+
+No blockers. Taken:
+- The rebuild step's fallback `collection_patch.py` call lacked `--extent-from`; added, and a test
+  now requires it on every call in `update.yml`.
+- `datetime.fromisoformat` on a bound written without an offset raised `TypeError` against the
+  aware listing; such a bound is now read as UTC.
+- `.python-version` pinned to 3.12 (the lock forks at 3.14; CI runs 3.12); `setup-uv` pinned to
+  0.11.11, since `--locked` with a newer uv that wanted to rewrite the lock would fail the install.
+- `scripts/build_safe.sh` executed bare `python` (an activated conda env, which no longer exists);
+  now `uv run python`, as are the README's run lines. Docstring usage lines are left: they assume an
+  activated `.venv`, which still holds.
+- `scripts/README.md`: the `--dryrun` comment said "previewed"; since stacs 0.2.0 it probes ssh and
+  the API and stops before the item fetch.
+- Undated items: probed, the API serves `albers10k2m_*` at `2000-01-01T00:00:00Z`. They stay
+  outside the extent (collection_create's long-standing exclusion), now said in NEWS and the #70 close.
+- Publish ordering and conditions written into the owed item.
+- The 2011-09-14 start is one served item, `093-093b-2023-dem-bc_093b048_xli1m_utm10_20110914_20231021`,
+  whose URL left `data/urls_list.txt` in 815d8f6 and is not in `urls_deleted.txt`. The widen-only
+  premise holds; the reason is "left the listing", not specifically a logged upstream deletion.
+- The listing's max 2026-05-06 is a single URL; the next latest is 2025-10-15.
+
+Declined or already done:
+- Running Fetch+Patch on every successful detect so CI self-heals the extent: changes the sync
+  gating for a one-time catch-up. The hand publish carries the current gap; every month with new
+  URLs or a rebuild now widens it.
+- `--check` does not exercise the href guard: the live check also wrote a scratch copy without
+  `--check` and compared `links` (identical, 102,460 preserved).
+- `stac_examples.qmd` imports `mercantile` and `stactools`, not in the lock: pre-existing, out of
+  scope; `uv sync` would remove them from a local `.venv` that had them.

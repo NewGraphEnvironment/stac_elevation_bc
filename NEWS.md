@@ -18,7 +18,9 @@ merges. Until that register runs, the API serves the collection as before.
   2025-06-05 while the collection served 2026 items. Every monthly run now widens it to cover
   the listing it detected (`collection_patch.py --extent-from`), and never narrows it: items
   whose source left the objectstore are kept (#28), and the published start, 2011-09-14, is
-  earlier than any date in today's listing.
+  earlier than any date in today's listing. The 2,245 `albers10k2m` items carry no date of
+  their own and are served at the placeholder `2000-01-01` (`lidarbc:datetime_unknown`), which
+  the extent leaves out, as a full build always has.
 - `lidarbc:delivery` is declared as a queryable, so it is listed at
   `/collections/stac-elevation-bc/queryables` beside the same key stac-pointcloud-bc declares.
 

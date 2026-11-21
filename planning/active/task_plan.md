@@ -67,7 +67,7 @@ Approved by the owner at the plan gate, 2026-11-21.
       inside the published interval changes nothing (the 2011-09-14 case), undated URLs ignored,
       idempotent second run, item hrefs untouched
 - [x] Move the listing → extent computation into one function (`collection_patch.extent_temporal_widen`),
-      used by `collection_create.py` too, so a full build and a patch cannot disagree
+      used by `collection_create.py` too, so a full build and a patch parse a listing the same way (not the same interval: a build starts at the listing's min, a patch keeps the published start)
 - [x] `collection_patch.py --extent-from <urls file>`: widen-only; reported in the change list so
       `--check` and the workflow's `changed` output see it
 - [x] `update.yml` patch step passes `--extent-from data/urls_list.txt`
@@ -85,13 +85,16 @@ Approved by the owner at the plan gate, 2026-11-21.
 
 ## Owed at the end (reported, done after merge)
 
-- [ ] Publish: fetch S3 `collection.json`, `collection_patch.py --extent-from data/urls_list.txt`,
+- [ ] Publish, from merged and pulled `main`, not on the 3rd of the month nor while `update.yml`
+      runs (its concurrency group does not cover a laptop), with local write credentials for the
+      bucket: fetch S3 `collection.json`, `collection_patch.py --extent-from data/urls_list.txt`,
       upload it (one object, versioned bucket); then `stacs register --config stacs.toml --mode drift`
       (collection changed → full re-compare; loads the queryable last); then `stacs verify` IN SYNC.
       Production writes: run by me if auto mode allows, otherwise handed over as bare commands
 - [ ] Check: `/collections/stac-elevation-bc` extent ends `2026-05-06`; `/queryables` lists
       `lidarbc:delivery`; pointcloud's queryable unchanged
-- [ ] Close #16 (note stac_uav_bc remains, per its scope table), #62, #70
+- [ ] Close #16 (note stac_uav_bc remains, per its scope table), #62, #70 (note the undated
+      `albers10k2m` items stay outside the extent, at their placeholder date)
 
 ## Validation
 

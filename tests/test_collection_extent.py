@@ -94,6 +94,12 @@ def test_an_open_end_stays_open():
     assert _interval(c) == ["2011-09-14T00:00:00Z", None]
 
 
+def test_a_bound_without_an_offset_is_read_as_utc():
+    c = _collection(end="2025-06-05T00:00:00")
+    assert extent_temporal_widen(c, [URL_2026])
+    assert _interval(c)[1] == "2026-05-06T00:00:00Z"
+
+
 def test_undated_listing_changes_nothing():
     c = _collection()
     assert not extent_temporal_widen(c, [URL_UNDATED])

@@ -123,7 +123,7 @@ log ""
 log "Step 3.5: Checking source URL accessibility..."
 ACCESS_LOG="${LOG_DIR}/${TIMESTAMP}_urls_access.log"
 
-if python scripts/urls_check_access.py 2>&1 | tee "$ACCESS_LOG"; then
+if uv run python scripts/urls_check_access.py 2>&1 | tee "$ACCESS_LOG"; then
     log "✓ All source URLs accessible"
 else
     log "⚠️  Some source URLs are inaccessible (upstream permission issue)"
@@ -139,7 +139,7 @@ log ""
 log "Step 4: Creating STAC collection..."
 COLLECTION_LOG="${LOG_DIR}/${TIMESTAMP}_collection.log"
 
-if python scripts/collection_create.py 2>&1 | tee "$COLLECTION_LOG"; then
+if uv run python scripts/collection_create.py 2>&1 | tee "$COLLECTION_LOG"; then
     log "✓ Collection created successfully"
 else
     error "Collection creation failed - check $COLLECTION_LOG"
@@ -156,7 +156,7 @@ log ""
 log "Step 4b: Computing footprints for tiles not yet cached..."
 FOOTPRINT_LOG="${LOG_DIR}/${TIMESTAMP}_footprints.log"
 
-if python scripts/footprint_extract.py --workers 16 2>&1 | tee "$FOOTPRINT_LOG"; then
+if uv run python scripts/footprint_extract.py --workers 16 2>&1 | tee "$FOOTPRINT_LOG"; then
     log "✓ Footprints up to date"
 else
     error "Footprint extraction failed - check $FOOTPRINT_LOG (resumable: re-run to continue)"
@@ -171,7 +171,7 @@ log "Step 5: Creating STAC items (this may take several hours)..."
 ITEMS_LOG="${LOG_DIR}/${TIMESTAMP}_items.log"
 START_TIME=$(date +%s)
 
-if python scripts/item_create.py 2>&1 | tee "$ITEMS_LOG"; then
+if uv run python scripts/item_create.py 2>&1 | tee "$ITEMS_LOG"; then
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
     MINUTES=$((DURATION / 60))
@@ -203,7 +203,7 @@ log "✓ collection.json present"
 
 # Run STAC item validation
 VALIDATION_LOG="${LOG_DIR}/${TIMESTAMP}_validation.log"
-if python scripts/item_validate.py 2>&1 | tee "$VALIDATION_LOG"; then
+if uv run python scripts/item_validate.py 2>&1 | tee "$VALIDATION_LOG"; then
     log "✓ STAC item validation passed"
 else
     log "⚠️  Some items failed validation - check $VALIDATION_LOG"

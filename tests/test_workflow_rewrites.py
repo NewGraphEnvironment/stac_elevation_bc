@@ -124,3 +124,17 @@ def test_the_collection_patch_widens_the_extent_from_the_detected_listing():
     patch = steps()[names.index("Patch collection metadata")]["run"]
     assert "--extent-from data/urls_list.txt" in patch
     assert names.index("Detect changes") < names.index("Patch collection metadata")
+
+
+def test_every_collection_patch_call_widens_the_extent():
+    """The rebuild step patches a collection it fetched itself when the patch step did
+    not run; a call that drops the flag would publish the stale extent again."""
+    calls = []
+    for s in steps():
+        # A call continued onto the next line is one call.
+        run = s.get("run", "").replace("\\\n", " ")
+        calls += [ln for ln in run.splitlines() if "collection_patch.py" in ln
+                  and not ln.strip().startswith("#")]
+    assert len(calls) >= 2, calls
+    for c in calls:
+        assert "--extent-from data/urls_list.txt" in c or "ARGS[@]" in c, c

@@ -94,7 +94,11 @@ jobs:
         with:
           extra-packages: any::sessioninfo
 
+      # Pinned, as the lock is: with --locked a newer uv that wanted to rewrite
+      # uv.lock would fail the monthly install. Bump it with a relock.
       - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.11"
 
       # From uv.lock (#16): the run installs exactly what was locked, and --locked
       # fails rather than relocking if pyproject.toml has moved without it. The stacs
@@ -367,7 +371,8 @@ jobs:
                 -o "$STAC_OUTPUT_DIR/collection.json"
               # No --allow-id-change: this is the monthly path. See the patch
               # step above.
-              .venv/bin/python scripts/collection_patch.py --path "$STAC_OUTPUT_DIR/collection.json" --clear-version
+              .venv/bin/python scripts/collection_patch.py --path "$STAC_OUTPUT_DIR/collection.json" --clear-version \
+                --extent-from data/urls_list.txt
             fi
             .venv/bin/python scripts/item_create.py --urls-file "$RUNNER_TEMP/urls_rebuild.txt"
           else

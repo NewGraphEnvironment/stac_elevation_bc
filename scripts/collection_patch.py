@@ -234,6 +234,13 @@ def _stac_time(t: datetime) -> str:
     return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _parse_stac_time(s: str) -> datetime:
+    """A published bound, aware. STAC requires UTC, but a bound written without an
+    offset would otherwise make the comparison with the listing raise TypeError."""
+    t = datetime.fromisoformat(s)
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
 def extent_temporal_widen(collection: dict, urls) -> bool:
     """Widen the overall temporal interval to cover `urls`. Returns True if it changed.
 
@@ -253,8 +260,8 @@ def extent_temporal_widen(collection: dict, urls) -> bool:
         # would publish a guess as the collection's extent.
         raise ValueError("collection.json has no temporal interval to widen") from None
     lo, hi = span
-    new_start = _stac_time(lo) if start is not None and lo < datetime.fromisoformat(start) else start
-    new_end = _stac_time(hi) if end is not None and hi > datetime.fromisoformat(end) else end
+    new_start = _stac_time(lo) if start is not None and lo < _parse_stac_time(start) else start
+    new_end = _stac_time(hi) if end is not None and hi > _parse_stac_time(end) else end
     if (new_start, new_end) == (start, end):
         return False
     collection["extent"]["temporal"]["interval"][0] = [new_start, new_end]
