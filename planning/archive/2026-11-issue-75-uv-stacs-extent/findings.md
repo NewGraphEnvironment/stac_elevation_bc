@@ -53,7 +53,7 @@ When the plan finds that a batch, or one of its members, is more than one PR's w
 | Error | Resolution |
 |-------|------------|
 | `reticulate::use_virtualenv(".venv")` looks in `~/.virtualenvs` | `"./.venv"`: a path needs a slash |
-| Docker Desktop mounted `/private/tmp` empty, so a container saw no `pyproject.toml` | stream the tree in with `git archive HEAD \| docker run -i ...` |
+| colima (default `mounts: []`) mounted `/private/tmp` as an empty directory, exit 0, so a container saw no `pyproject.toml`; first blamed on Docker Desktop, which this Mac does not run | stream the tree in with `git archive HEAD \| docker run -i ...`, or mount from under `$HOME` |
 
 ## Phase 1: the lock against the run it replaces
 
