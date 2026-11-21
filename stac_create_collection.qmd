@@ -21,7 +21,7 @@ if (!require("reticulate", quietly = TRUE)) {
   library(reticulate)
 }
 
-reticulate::use_condaenv("stac-catalog", required = TRUE)
+reticulate::use_virtualenv("./.venv", required = TRUE)  # uv sync builds it (#16); a bare name is looked up in ~/.virtualenvs
 # reticulate::py_config()
 
 # Test mode configuration

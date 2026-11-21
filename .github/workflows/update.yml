@@ -94,16 +94,19 @@ jobs:
         with:
           extra-packages: any::sessioninfo
 
+      # Pinned, as the lock is: with --locked a newer uv that wanted to rewrite
+      # uv.lock would fail the monthly install. Bump it with a relock.
       - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.11.11"
 
+      # From uv.lock (#16): the run installs exactly what was locked, and --locked
+      # fails rather than relocking if pyproject.toml has moved without it. The stacs
+      # tag lives in pyproject.toml; tests/test_stacs_config.py pins it there, in the
+      # lock and installed. uv sync builds .venv, which every later step calls by path.
       - name: Install Python dependencies
         run: |
-          uv venv --python 3.12 .venv
-          uv pip install --python .venv/bin/python \
-            "pystac[validation]>=1.12.0" "pystac-client>=0.8.0" \
-            "rio-stac>=0.11.0" "rasterio>=1.4.0" rio-cogeo shapely \
-            pandas requests tqdm deepdiff pytest pyyaml \
-            "stacs @ git+https://github.com/NewGraphEnvironment/stacs@v0.1.0"
+          uv sync --locked --python 3.12
           .venv/bin/python -c "import rasterio, rio_stac, pystac, jsonschema, stacs; print('imports OK, rasterio', rasterio.__version__, 'stacs', stacs.__version__)"
 
       # The pairing decides whether a tile gets a dsm asset or is recorded as a
@@ -203,8 +206,12 @@ jobs:
         # performed by the cron, reported by nothing. It fails loudly instead,
         # which is the correct answer to "someone merged a rename and has not
         # dispatched it".
+        # --extent-from: the temporal extent widens (never narrows) to cover the
+        # listing detect just wrote (#70). Before it, only a full build computed
+        # the extent, so the API served 2026 items under one ending 2025-06-05.
         run: |
-          ARGS=(--path "$STAC_OUTPUT_DIR/collection.json" --clear-version)
+          ARGS=(--path "$STAC_OUTPUT_DIR/collection.json" --clear-version
+                --extent-from data/urls_list.txt)
           if [ "${{ inputs.rename }}" = "true" ]; then
             ARGS+=(--allow-id-change)
           fi
@@ -364,7 +371,8 @@ jobs:
                 -o "$STAC_OUTPUT_DIR/collection.json"
               # No --allow-id-change: this is the monthly path. See the patch
               # step above.
-              .venv/bin/python scripts/collection_patch.py --path "$STAC_OUTPUT_DIR/collection.json" --clear-version
+              .venv/bin/python scripts/collection_patch.py --path "$STAC_OUTPUT_DIR/collection.json" --clear-version \
+                --extent-from data/urls_list.txt
             fi
             .venv/bin/python scripts/item_create.py --urls-file "$RUNNER_TEMP/urls_rebuild.txt"
           else

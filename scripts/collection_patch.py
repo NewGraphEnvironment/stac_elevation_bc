@@ -23,6 +23,9 @@ Fields applied (#30, and the id since #34):
   keywords    so the collection is discoverable by something other than its id.
   description names `dem` as the bare-earth asset beside `dsm`.
   related     one link to stac-pointcloud-bc, whose items share lidarbc:delivery (#55).
+  extent      the temporal interval, widened (never narrowed) to cover the listing
+              given with --extent-from (#70). Only then: without a listing there is
+              nothing to widen against, and the extent is left as published.
 
 The STAC Version Extension is handled SEPARATELY, by --version / --clear-version,
 and deliberately sits outside collection_patch()'s idempotence contract. If the
@@ -33,6 +36,7 @@ Usage:
     python scripts/collection_patch.py                       # patch $STAC_OUTPUT_DIR
     python scripts/collection_patch.py --path some/coll.json
     python scripts/collection_patch.py --check               # exit 1 if unpatched
+    python scripts/collection_patch.py --extent-from data/urls_list.txt   # widen the extent too
     python scripts/collection_patch.py --version 1.1.0       # stamp a release
     python scripts/collection_patch.py --clear-version       # un-version (monthly)
 """
@@ -42,8 +46,14 @@ import json
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 
-from stac_utils import encode_url_for_gdal, get_output_dir
+from stac_utils import (
+    date_extract_from_path,
+    datetime_parse_item,
+    encode_url_for_gdal,
+    get_output_dir,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +217,59 @@ def links_related(collection: dict) -> bool:
     return True
 
 
-def collection_patch(collection: dict, allow_id_change: bool = False) -> tuple[dict, list[str]]:
+def temporal_interval_from_urls(urls) -> tuple[datetime, datetime] | None:
+    """(earliest, latest) item datetime the source URLs give, or None if none is dated.
+
+    The same parse item_create.py dates an item with. An undated URL is left out:
+    its item carries a placeholder datetime (lidarbc:datetime_unknown), which is not
+    a date the collection covers. collection_create.py builds a fresh extent from
+    this, and extent_temporal_widen() widens a published one with it, so the two
+    cannot disagree about what a listing spans.
+    """
+    times = [t for t in (datetime_parse_item(date_extract_from_path(u)) for u in urls) if t]
+    return (min(times), max(times)) if times else None
+
+
+def _stac_time(t: datetime) -> str:
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_stac_time(s: str) -> datetime:
+    """A published bound, aware. STAC requires UTC, but a bound written without an
+    offset would otherwise make the comparison with the listing raise TypeError."""
+    t = datetime.fromisoformat(s)
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
+
+
+def extent_temporal_widen(collection: dict, urls) -> bool:
+    """Widen the overall temporal interval to cover `urls`. Returns True if it changed.
+
+    WIDEN ONLY (#70). The listing is not the whole catalogue: an item whose source
+    left the objectstore is kept (#28), and on 2026-11-21 the published start
+    (2011-09-14) was earlier than any date in the listing (2012-01-01). Recomputing
+    from the listing would narrow the extent below items the collection serves.
+    A null end is unbounded, so it is never replaced by a date.
+    """
+    span = temporal_interval_from_urls(urls)
+    if span is None:
+        return False
+    try:
+        start, end = collection["extent"]["temporal"]["interval"][0]
+    except (KeyError, IndexError, TypeError, ValueError):
+        # STAC requires the interval, and every build writes one. Inventing one here
+        # would publish a guess as the collection's extent.
+        raise ValueError("collection.json has no temporal interval to widen") from None
+    lo, hi = span
+    new_start = _stac_time(lo) if start is not None and lo < _parse_stac_time(start) else start
+    new_end = _stac_time(hi) if end is not None and hi > _parse_stac_time(end) else end
+    if (new_start, new_end) == (start, end):
+        return False
+    collection["extent"]["temporal"]["interval"][0] = [new_start, new_end]
+    return True
+
+
+def collection_patch(collection: dict, allow_id_change: bool = False,
+                     urls=None) -> tuple[dict, list[str]]:
     """Return the patched collection and the names of fields that changed.
 
     Pure and idempotent: re-running against an already-patched collection
@@ -261,6 +323,11 @@ def collection_patch(collection: dict, allow_id_change: bool = False) -> tuple[d
         if collection.get(field) != value:
             collection[field] = value
             changed.append(field)
+    # The extent is a fact about the listing, so it is checked only when one is given
+    # (`urls`); the monthly run passes the listing it just detected.
+    if urls is not None and extent_temporal_widen(collection, urls):
+        start, end = collection["extent"]["temporal"]["interval"][0]
+        changed.append(f"temporal extent -> {start or '..'}/{end or '..'}")
     return collection, changed
 
 
@@ -273,6 +340,9 @@ def main() -> int:
                              "ONLY -- the item bodies must move with it.")
     parser.add_argument("--check", action="store_true",
                         help="Report whether a patch is needed; exit 1 if it is. Writes nothing.")
+    parser.add_argument("--extent-from", default=None, metavar="URLS_FILE",
+                        help="Widen the temporal extent (never narrow it) to cover the source "
+                             "URLs in this file, one per line: the listing, data/urls_list.txt (#70).")
     parser.add_argument("--version", default=None,
                         help="Stamp this release version via the STAC Version Extension. "
                              "Release path only; pass it explicitly (never derived from git here).")
@@ -296,6 +366,16 @@ def main() -> int:
     with open(path) as fh:
         collection = json.load(fh)
 
+    urls = None
+    if args.extent_from:
+        # A missing listing is an error, not an empty one: read as "nothing dated" it
+        # would report the extent current whatever the collection holds.
+        if not os.path.exists(args.extent_from):
+            logger.error("Listing not found: %s", args.extent_from)
+            return 2
+        with open(args.extent_from) as fh:
+            urls = [u for u in fh.read().splitlines() if u.strip()]
+
     # The hrefs, not merely how many. A count cannot see a link whose href
     # MUTATED, and #34 introduces exactly that risk: the collection id is being
     # renamed while the bucket in every item link keeps its old name, so a
@@ -308,8 +388,8 @@ def main() -> int:
 
     try:
         collection, changed = collection_patch(
-            collection, allow_id_change=args.allow_id_change)
-    except RuntimeError as e:
+            collection, allow_id_change=args.allow_id_change, urls=urls)
+    except (RuntimeError, ValueError) as e:
         # The message IS the diagnostic. A traceback buries it in CI log noise,
         # and this one is read by whoever has to decide what to do next.
         logger.error("%s", e)

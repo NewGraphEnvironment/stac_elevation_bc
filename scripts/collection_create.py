@@ -26,12 +26,11 @@ from collection_patch import (
     DESCRIPTION,
     KEYWORDS,
     PROVIDERS,
+    temporal_interval_from_urls,
     version_stamp,
 )
 from stac_utils import (
     BBOX_BC,
-    date_extract_from_path,
-    datetime_parse_item,
     get_output_dir,
     PATH_S3_JSON,
 )
@@ -86,16 +85,15 @@ def main():
         path_items = path_items[:args.test_count]
         logger.info("Test mode: Using %d items for extent calculation", len(path_items))
 
-    # Calculate temporal extent from URL paths
-    times = [datetime_parse_item(date_extract_from_path(p)) for p in path_items]
-    times = [t for t in times if t is not None]
-
-    if not times:
+    # Calculate temporal extent from URL paths. The same function widens the
+    # published extent on a monthly run (collection_patch --extent-from, #70), so
+    # a full build and a patch agree on what a listing spans.
+    span = temporal_interval_from_urls(path_items)
+    if span is None:
         logger.error("No valid datetimes extracted from URLs")
         return 1
 
-    start_time = min(times)
-    end_time = max(times)
+    start_time, end_time = span
     temporal_extent = TemporalExtent([[start_time, end_time]])
     logger.info("Temporal extent: %s to %s", start_time.isoformat(), end_time.isoformat())
 

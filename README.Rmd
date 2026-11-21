@@ -183,7 +183,6 @@ The big one landed in 2026: the catalog is now **self-updating** ([#23](https://
 - **No surface model for 11 deliveries** — 1,211 DEM tiles across 11 mapsheet-years have a `dsm/` directory holding only `.laz`, and that `.laz` is an RGB-colourised copy of the same tile's point cloud, not a surface model. Recorded as a declared coverage gap in `data/dsm_pairing_report.md`.
 - **CHM** ([#29](https://github.com/NewGraphEnvironment/stac_elevation_bc/issues/29)) — 264 canopy-height tiles are published province-wide, ~1.1% coverage of the mapsheet-years that carry them. Worth indexing for completeness; not a substitute for deriving.
 - **Structured logging + performance benchmarking** ([#6](https://github.com/NewGraphEnvironment/stac_elevation_bc/issues/6)) — instrument the pipeline so build performance is quantifiable across runs.
-- **uv-based Python dependency management** ([#16](https://github.com/NewGraphEnvironment/stac_elevation_bc/issues/16)) — the CI workflow already installs with uv; migrate the local conda environment to match.
 
 Browse [open issues](https://github.com/NewGraphEnvironment/stac_elevation_bc/issues) for the full backlog.
 

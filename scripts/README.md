@@ -28,14 +28,14 @@ This pipeline builds a searchable catalog of British Columbia's Digital Elevatio
 
 # Or run individual steps from the project root
 Rscript scripts/urls_fetch.R
-python scripts/urls_check_access.py
-python scripts/collection_create.py
-python scripts/footprint_extract.py   # resumable; ~40 h the first time, then only new tiles
+uv run python scripts/urls_check_access.py
+uv run python scripts/collection_create.py
+uv run python scripts/footprint_extract.py   # resumable; ~40 h the first time, then only new tiles
 # A local run writes rows without listing their published items for rebuild (CI
 # passes --changed-out). Follow one with a footprint dispatch of update.yml, which
 # rewrites every published item from the cache and leaves correct ones untouched.
-python scripts/item_create.py
-python scripts/item_validate.py
+uv run python scripts/item_create.py
+uv run python scripts/item_validate.py
 Rscript scripts/s3_sync.R
 ```
 
@@ -160,16 +160,16 @@ Most scripts support flags that control scope:
 
 ```bash
 # Test mode — process a small sample for development
-python scripts/item_create.py --test --test-count 50
+uv run python scripts/item_create.py --test --test-count 50
 
 # Incremental — only process new files detected by change detection
-python scripts/item_create.py --incremental
+uv run python scripts/item_create.py --incremental
 
 # Reprocess — fix previously invalid items
-python scripts/item_create.py --reprocess-invalid
+uv run python scripts/item_create.py --reprocess-invalid
 
 # Full production — process everything
-python scripts/item_create.py
+uv run python scripts/item_create.py
 ```
 
 ## Logs
@@ -194,7 +194,7 @@ The bottleneck is network: each GeoTIFF must be partially read over HTTP to extr
 
 | Component | What's needed |
 |-----------|---------------|
-| Python | ≥ 3.11; `pystac`, `rio_stac`, `rasterio`, `rio-cogeo`, `pandas`, `tqdm`, and [`stacs`](https://github.com/NewGraphEnvironment/stacs) for registration (pinned tag; see `environment.yml`) |
+| Python | ≥ 3.12, from [`uv`](https://docs.astral.sh/uv/): `uv sync` at the repo root builds `.venv` from `uv.lock` (`pystac`, `rio_stac`, `rasterio`, `rio-cogeo`, `pandas`, `tqdm`, and [`stacs`](https://github.com/NewGraphEnvironment/stacs) for registration, pinned by tag in `pyproject.toml`) |
 | R | `ngr` package (for objectstore listing) |
 | AWS CLI | Configured with write access to `s3://stac-dem-bc` |
 | System | `rio` CLI tools (installed with rasterio) |
@@ -226,12 +226,12 @@ The bottleneck is network: each GeoTIFF must be partially read over HTTP to extr
 
 ## After the Pipeline
 
-Once the catalog is on S3, register it in pgstac to make it searchable. Registration and verification are the [`stacs`](https://github.com/NewGraphEnvironment/stacs) package (#49), pinned by tag in `environment.yml` and the workflow, and this catalogue declares itself to it in [`stacs.toml`](../stacs.toml) at the repo root. One command from any machine with tailnet SSH to the STAC host:
+Once the catalog is on S3, register it in pgstac to make it searchable. Registration and verification are the [`stacs`](https://github.com/NewGraphEnvironment/stacs) package (#49), pinned by tag in `pyproject.toml` and locked in `uv.lock`, which the workflow installs from, and this catalogue declares itself to it in [`stacs.toml`](../stacs.toml) at the repo root. One command from any machine with tailnet SSH to the STAC host:
 
 ```bash
 .venv/bin/stacs verify   --config stacs.toml --out-dir verify_report/   # is the API behind S3, or serving stale bodies? changes nothing
 .venv/bin/stacs register --config stacs.toml --mode drift               # register whatever it is missing or serves stale
-.venv/bin/stacs register --config stacs.toml --mode all --dryrun        # the full re-register, previewed
+.venv/bin/stacs register --config stacs.toml --mode all --dryrun        # probes ssh and the API, then stops before fetching items
 ```
 
 `drift` fetches every body `collection.json` publishes, compares each with what the API actually serves, and registers the items it is missing or serves with a different body (#45). Comparing ids alone is not enough: a rebuild keeps every id, so a catalogue whose bodies had all been rewritten used to verify `IN SYNC` while the API served the old ones. It is stateless — it needs no record of what previous runs did — so a month that nobody registered simply gets picked up by the next run. That matters: registration was skipped once for a month and the API served 60,126 items against 98,040 published.

@@ -38,3 +38,13 @@ pg_port = 5432
 pg_user = "stac"
 password_env = "POSTGRES_PASSWORD"
 pypgstac = ["uv", "run", "pypgstac"]
+
+# #62: the key items here share with stac-pointcloud-bc (#55), declared so a CQL2 client
+# finds it at /collections/stac-elevation-bc/queryables. The fragment is
+# stac_pointcloud_bc's, verbatim; stacs loads it for this collection's own row only.
+# tests/test_stacs_config.py pins the pattern to stac_utils._DELIVERY_RE.
+[queryables."lidarbc:delivery"]
+type = "string"
+title = "LidarBC delivery"
+description = "The objectstore path <block>/<sheet>/<year> of the LidarBC delivery a file came from, e.g. 092/092g/2016"
+pattern = "^[0-9]{3}/[0-9]{3}[a-p]/[0-9]{4}$"

@@ -214,10 +214,6 @@ Still ahead:
   ([\#6](https://github.com/NewGraphEnvironment/stac_elevation_bc/issues/6))
   — instrument the pipeline so build performance is quantifiable across
   runs.
-- **uv-based Python dependency management**
-  ([\#16](https://github.com/NewGraphEnvironment/stac_elevation_bc/issues/16))
-  — the CI workflow already installs with uv; migrate the local conda
-  environment to match.
 
 Browse [open
 issues](https://github.com/NewGraphEnvironment/stac_elevation_bc/issues)
