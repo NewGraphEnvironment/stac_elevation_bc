@@ -104,6 +104,7 @@ why the README's worked example renders `dem`-only and says so rather than swapp
 - ✅ STAC JSON validation layer (new)
 - ✅ Monthly automation via GitHub Actions (`update.yml`: cron 3rd of month + workflow_dispatch, OIDC to S3); pgstac registration is a client-side upsert in this repo (#27), still run by hand because no runner can reach the host
 - ✅ A failed or cancelled monthly run opens one `run-failed` issue, or comments on the open one (#72); before that, the 2026-11-03 failure went unseen for 17 days. The run's R dependencies come from `DESCRIPTION`, which pins `ngr@v0.0.6`: ngr's earlier tags follow spacehakr's rename to bag and cannot install
+- ✅ A failed or cancelled run does not commit the listing it detected (#63): the always() cache commit restores every file `detect_changes.R` writes unless the sync succeeded or the job succeeded without one, so the next run re-detects the same URLs. Its commit message then ends `listing withheld`. The test runs the step's own shell (`tests/test_workflow_failed_run.py`); the sync alone is the wrong predicate, because a deletions-only month can skip it and still succeed
 - ✅ Spatial extent optimized (hardcoded BC bbox)
 
 **Goals:**
