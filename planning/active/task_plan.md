@@ -77,9 +77,9 @@ still say a failed run persists nothing.
 
 ## Validation
 
-- [ ] `.venv/bin/python -m pytest tests/ -q` passes
-- [ ] `/code-check branch` clean (three-round floor)
-- [ ] PWF checkboxes match landed work
+- [x] `.venv/bin/python -m pytest tests/ -q` passes
+- [x] `/code-check branch` clean (three-round floor)
+- [x] PWF checkboxes match landed work
 - [ ] `/planning-archive`, then `/gh-pr-push`
 
 Verification: the behavioural harness is the proof — it runs the step's real shell against

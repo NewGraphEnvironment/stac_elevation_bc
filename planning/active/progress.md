@@ -12,3 +12,5 @@
 - Phase 3: scripts/README.md :209, :214 and the "Oversized batches" bullet corrected. The ledger line "a month absent ... failed" also changed: a failed month can now commit caches. grep of CLAUDE.md, README.md, scripts/ found no other restatement; archived planning/ left as history.
 - Code-check round 1: Clean (review-round1.md; 4 mutations, each caught).
 - Plan review folded (review-plan-63.md): tests now cover a deletion the failed run staged, a rebase onto a moved origin, and cross-check detect's header against its `*_file <- "data/..."` paths; the commit message ends `; run <status>, listing withheld` when the listing is restored; run-logs carries data/urls_new.txt. Suite 327 passed.
+- Code-check rounds 2 and 3: Clean (review-round2.md, review-round3.md). Loop ended on a clean round 3 with no inside-a-fix finding in any round; verdict in review-verdict.md. Round 3 skipped three Mechanisms prose sections (round 1 read all 14) and is recorded so in its file.
+- Full suite 327 passed.
