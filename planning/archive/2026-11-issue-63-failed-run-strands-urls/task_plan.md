@@ -80,7 +80,7 @@ still say a failed run persists nothing.
 - [x] `.venv/bin/python -m pytest tests/ -q` passes
 - [x] `/code-check branch` clean (three-round floor)
 - [x] PWF checkboxes match landed work
-- [ ] `/planning-archive`, then `/gh-pr-push`
+- [x] `/planning-archive`, then `/gh-pr-push`
 
 Verification: the behavioural harness is the proof — it runs the step's real shell against
 each outcome pair. No live dispatch is needed; the next monthly run (2026-12-03) exercises
