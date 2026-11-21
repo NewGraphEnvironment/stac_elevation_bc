@@ -23,7 +23,7 @@ counts them): run `/backlog-sweep` again, the backlog is not finished.
 
 | move | umbrella | batches | state | lane | waits on | model |
 |---|---|---|---|---|---|---|
-| - [ ] 1 | #74 | 1, 2: pairing list and its wording, transient reads (3 issues) | open: start here | A | — | opus |
+| - [x] 1 | #74 | 1, 2: pairing list and its wording, transient reads (3 issues) | done: https://github.com/NewGraphEnvironment/stac_elevation_bc/pull/81 | A | — | opus |
 | - [ ] 2 | #75 | 3, 4: uv and stacs, temporal extent (3 issues) | open | A | 1 | fable then opus |
 | - [ ] 3 | #76 | 5, 6: README, remove s3_sync.R (4 issues) | open | B | — | opus |
 | - [ ] 4 | #77 | 7: footprints.csv size (1 issue) | open | A | 1, 2 | opus |
@@ -48,7 +48,7 @@ No tracks in this repo.
 
 ### 1. Pairing list and its wording
 
-- [ ] Carried by move 1, #74
+- [x] Carried by move 1, #74 (merged in https://github.com/NewGraphEnvironment/stac_elevation_bc/pull/81)
 
 **Touches:** `scripts/dsm_pair.py`, `.github/workflows/update.yml`, `data/dsm_pairing_report.md`, `CLAUDE.md`, `tests/test_dsm_pair.py`, `tests/test_workflow_failed_run.py`
 
@@ -61,7 +61,7 @@ regenerate the report. Gate: the prune rule for the pairing list.
 
 ### 2. Transient reads
 
-- [ ] Carried by move 1, #74
+- [x] Carried by move 1, #74 (merged in https://github.com/NewGraphEnvironment/stac_elevation_bc/pull/81)
 
 **Touches:** `scripts/item_create.py`, `scripts/stac_utils.py`
 
