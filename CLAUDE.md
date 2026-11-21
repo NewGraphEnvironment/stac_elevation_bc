@@ -3224,3 +3224,83 @@ Make every README figure of the package's output from a committed script that ru
 
 ### Leave out what another file already keeps
 Leave out roadmaps, changelogs, function tables, version strings in prose, counts of published things, and internal hosts or private repos, because each is kept elsewhere and goes stale in a README.
+
+# Writing for the Reader
+Anything an outside reader sees answers their questions in their order and carries nothing that served only its authors.
+
+*Index only: each rule's heading and first sentence. The full text is soul's `conventions/writing.md`; read it before writing or reviewing code in its area.*
+
+### Headings are the reader's questions, in the order they ask them
+Make each heading a question the reader brings, in their order, within any sections a report template fixes; in a data product's article, limits and validation go last.
+
+### Open with the answer
+State the finding, with its numbers, in a sentence or two before any method, so a reader who stops there has the right answer.
+
+### Orient the reader in one sentence per place
+Say where each place is by the river it joins and the nearest town with a compass direction, checked against the Freshwater Atlas, and show the places on regional maps with keymaps.
+
+### Write each article to stand alone
+Never use a sibling article as the reference point: describe each method, bar and comparison on its own terms, and carry the sentence the reader needs rather than the sibling's figure or paragraph.
+
+### A number says what it is of, in the sentence that carries it
+Write a difference of two shares in percentage points, and a transformed value as what it means.
+
+### Each section, bullet and caption reads alone
+Restate in a few words what a passage depends on, since a reader arrives from a link.
+
+### Define a term in its own place, before it is used
+Give a term the article depends on its own short section before its first use, with its rule, why it exists, and how many cases fall each way.
+
+### Prefer a plain phrase to a term
+Name a quantity by what it does for the reader ("the score; lower is better"), and keep a term only if the article reuses it, giving it its own place.
+
+### Species common names in lower case
+Write chinook salmon, coho and steelhead in lower case in prose and captions: it is our house style.
+
+### Choose the form that lands with the reader
+Pick a sentence, table, figure or map by which one tells the reader the story fastest, and judge it by its effect on the reader, not by a preference for prose.
+
+### A sentence beside a table says what it shows, never what it holds
+Say the pattern beside a figure or table and leave its values to it: restated medians, shares and month names are read twice, and a statistic the table does not hold has no source on the page.
+
+### A caption names every mark the figure draws
+When a figure gains a mark, its caption gains a phrase, or the new mark reads as one the caption already names.
+
+### Define, read and cite every statistic you name
+Give every statistic an article names, at the table that carries it, what it compares, how to read its values, a source, and a published rating scale beside the values where one exists.
+
+### Cut what serves the authors
+Remove what the authors needed and the reader does not: parity with superseded products, paths to internal research, and how a decision was reached.
+
+### State a weakness as what the product does, not what the reader should do
+Describe each weakness in one sentence about what the product does, with no advice on working around it beyond the product's own rule.
+
+### State each claim by the code's definition
+Describe a set the code defines by that definition, never by its best-known member or a nearby proxy, or the sentence and its guard cover the proxy, not the set.
+
+### Check that each guard covers the set its sentence names
+Give each claim a guard over the whole set its sentence names, at the precision written, and re-read the guard whenever the sentence moves or is reworded, as "State each claim by the code's definition" asks of the sentence.
+
+### When explaining a decision, list every check and the way it points
+Count the checks from the data, not the conclusion, give each its direction, and call a choice the evidence did not make a decision.
+
+### Name, link and cite the software
+Cite every package an article uses inline at its first mention, ours included, data to its publisher and each claim to the page that says it, from one `.bib` of Zotero entries and the packages' own `citation()`.
+
+### Measure the simplification
+Report word and line counts before and after a rewrite, against the forecast, and name what set the floor.
+
+### Lead with what the product does and why it matters
+Open every public piece with what the product does for the reader and why it matters, before anything about how it was made.
+
+### Let visuals carry the story where they land better
+Put the story in a map, figure or table whenever the reader takes it in faster there than from prose, and keep the prose to what the visual cannot say.
+
+### Show one case before the statistic that counts cases
+Show what an effect does in one case, a figure or a worked example, before the table that counts how often it happens, and say in the table's lead-in why the count matters.
+
+### Review a rendered article where the reader will read it
+Offer the rendered page in a form that opens on a phone, before the merge, without being asked.
+
+### Cut any number or caveat that does not change what the reader understands
+Drop a number, a precision or a caveat that leaves the reader's understanding of the product where it was, because detail the reader does not need walls them off.
