@@ -303,8 +303,9 @@ jobs:
       # A DSM can arrive for a DEM already in the catalog, and a footprint can
       # arrive for an item built without one (#2). Nothing else would rebuild
       # those items -- item_create.py otherwise only ever sees newly-listed DEM
-      # URLs -- so both diffs drive one rebuild pass. Each file is written empty
-      # when nothing changed, so the step is a cheap no-op.
+      # URLs -- so both lists drive one rebuild pass. Both are cumulative: a URL
+      # stays listed until the commit step's prune finds its item published, so
+      # the step is a cheap no-op only when both are empty.
       - name: Rebuild items whose DSM pairing or footprint changed
         id: rebuild
         if: >-
@@ -313,7 +314,10 @@ jobs:
         run: |
           # The pairing list whenever it is non-empty: it is cumulative (#57),
           # so everything on it is a pairing change not yet published, whether
-          # this run re-paired or an earlier run failed before its sync.
+          # this run re-paired or an earlier run failed before its sync. At
+          # most its first 2000 per run, for the footprint list's reason: a
+          # list too long to rebuild inside the job timeout would time out
+          # every month once kept. The rest stay listed; the prune drains it.
           #
           # The footprint list is skipped on the footprint dispatch, which
           # rewrites every published item itself, and when it is too long to
@@ -332,10 +336,17 @@ jobs:
           else
             LISTS+=(data/urls_footprint_changed.txt)
           fi
-          LISTS+=(data/urls_pairing_changed.txt)
-          for f in "${LISTS[@]}"; do
-            if [ -f "$f" ]; then cat "$f"; fi
-          done | sort -u > "$RUNNER_TEMP/urls_rebuild.txt"
+          N_PAIR=0
+          if [ -f data/urls_pairing_changed.txt ]; then N_PAIR=$(wc -l < data/urls_pairing_changed.txt | tr -d ' '); fi
+          if [ "$N_PAIR" -gt 2000 ]; then
+            echo "::warning title=Pairing rebuild list long::$N_PAIR URLs - rebuilding the first 2000; the rest stay listed for later runs"
+          fi
+          {
+            for f in "${LISTS[@]}"; do
+              if [ -f "$f" ]; then cat "$f"; fi
+            done
+            if [ -f data/urls_pairing_changed.txt ]; then head -n 2000 data/urls_pairing_changed.txt; fi
+          } | sort -u > "$RUNNER_TEMP/urls_rebuild.txt"
           if [ -s "$RUNNER_TEMP/urls_rebuild.txt" ]; then
             echo "rebuilding $(wc -l < "$RUNNER_TEMP/urls_rebuild.txt") items"
             if [ ! -s "$STAC_OUTPUT_DIR/collection.json" ]; then
@@ -636,8 +647,14 @@ jobs:
           # on and still exits 0. So prune exactly the URLs whose item was
           # staged, and only after the sync that uploaded them succeeded.
           if [ "${{ steps.sync.outcome }}" = "success" ] && [ -s data/urls_footprint_changed.txt ]; then
-            .venv/bin/python scripts/footprint_extract.py \
-              --prune-changed "$STAC_OUTPUT_DIR" --changed-out data/urls_footprint_changed.txt
+            # A prune that fails must not abort this step under bash -e: that
+            # would lose every cache the run refreshed. Both prunes write
+            # through a tmp file and os.replace, so a failure leaves the list
+            # whole, and it is retried next run.
+            if ! .venv/bin/python scripts/footprint_extract.py \
+                --prune-changed "$STAC_OUTPUT_DIR" --changed-out data/urls_footprint_changed.txt; then
+              echo "::warning title=Footprint prune failed::the rebuild list is kept unpruned; the next run retries"
+            fi
             git add data/urls_footprint_changed.txt
           fi
 
@@ -648,7 +665,9 @@ jobs:
           # paired DSM, or it has none where the pairing has none), and only
           # after the sync that uploaded it succeeded.
           if [ "${{ steps.sync.outcome }}" = "success" ] && [ -s data/urls_pairing_changed.txt ]; then
-            .venv/bin/python scripts/dsm_pair.py --prune-changed "$STAC_OUTPUT_DIR"
+            if ! .venv/bin/python scripts/dsm_pair.py --prune-changed "$STAC_OUTPUT_DIR"; then
+              echo "::warning title=Pairing prune failed::the rebuild list is kept unpruned; the next run retries"
+            fi
             git add data/urls_pairing_changed.txt
           fi
 

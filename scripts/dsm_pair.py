@@ -47,7 +47,7 @@ import os
 import sys
 from collections import Counter, defaultdict
 
-from footprint_extract import changed_finalize, urls_read
+from footprint_extract import urls_read
 from stac_utils import (
     ASSET_DSM,
     PATH_S3,
@@ -340,6 +340,12 @@ def pairing_changed_prune(path: str, staged_dir: str,
         return 0, 0
     urls = urls_read(path)
     lookup = dsm_lookup_load(pairs_csv)
+    if not lookup:
+        # No pairs to compare against: every item without a dsm would read as
+        # "carries its pairing", and the list would empty on a failed read.
+        logger.warning("No paired rows in %s - keeping all %d listed URLs", pairs_csv,
+                       len(set(urls)))
+        return 0, len(set(urls))
 
     def done(u):
         p = os.path.join(staged_dir, f"{url_to_item_id(u)}.json")
@@ -359,6 +365,31 @@ def pairing_changed_prune(path: str, staged_dir: str,
         fh.writelines(f"{u}\n" for u in kept)
     os.replace(tmp, path)
     return len(set(urls)) - len(kept), len(kept)
+
+
+def pairing_list_merge(path: str, changed: list[str], rows: list[dict]) -> int:
+    """Add this run's changed DEM keys to the cumulative rebuild list. Returns its length.
+
+    Never overwrites what is listed: the list holds every change not yet
+    published, and only --prune-changed takes a URL off it. Two exceptions,
+    both logged. A URL whose DEM is no longer in the listing leaves, because
+    rebuilding it would republish a tile deleted upstream (#28 owns those). A
+    partial line from a killed write leaves the same way, because it matches
+    no DEM. Written to a tmp file and renamed, so a kill mid-write leaves the
+    old list whole.
+    """
+    current = {f"{PATH_S3}/{r['dem_key']}" for r in rows}
+    prior = set(urls_read(path)) if os.path.exists(path) else set()
+    gone = prior - current
+    if gone:
+        logger.warning("%d listed URLs are not in the current DEM listing - dropped "
+                       "from the rebuild list: %s", len(gone), ", ".join(sorted(gone)[:5]))
+    listed = sorted((prior & current) | {f"{PATH_S3}/{k}" for k in changed})
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as fh:
+        fh.writelines(f"{u}\n" for u in listed)
+    os.replace(tmp, path)
+    return len(listed)
 
 
 def summarize(result: dict) -> dict:
@@ -580,11 +611,7 @@ def main() -> int:
         logger.info("No pairing changes since the last run")
 
     os.makedirs(os.path.dirname(args.pairs_csv) or ".", exist_ok=True)
-    # Append, never overwrite: the list holds every change not yet published,
-    # and only --prune-changed takes a URL off it.
-    with open(args.changed_urls, "a") as fh:
-        fh.write("".join(f"{PATH_S3}/{k}\n" for k in changed))
-    listed = changed_finalize(args.changed_urls)
+    listed = pairing_list_merge(args.changed_urls, changed, result["rows"])
     if listed:
         logger.info("%d DEM items on the cumulative rebuild list %s",
                     listed, args.changed_urls)

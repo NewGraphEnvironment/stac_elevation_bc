@@ -47,3 +47,16 @@ When the plan finds that a batch, or one of its members, is more than one PR's w
 
 | Error | Resolution |
 |-------|------------|
+
+## GDAL /vsicurl/ failure caching, measured 2026-11-21
+
+Setup: a local `http.server` that fails the first request for each file and then serves a 16x16 GeoTIFF with Range support. rasterio 1.5.1, GDAL 3.12.4. Scratch only, not committed.
+
+| case | 1st open | server hits | 2nd open in-process | server hits |
+|---|---|---|---|---|
+| plain retry, 503 | FAIL | 1 | FAIL | 1 |
+| plain retry, 404 | FAIL | 1 | FAIL | 1 |
+| `CPL_VSIL_CURL_NON_CACHED` = the URL, 503 | ok | 3 | ok | 6 |
+| connection reset | ok | 3 | ok | 3 |
+
+A failed open is cached: the retry never reaches the server. With `NON_CACHED` set, GDAL's own handling got past the first failure. The fail-with-no-option-then-retry-with-it sequence, `GDAL_HTTP_MAX_RETRY` on a 503, and `rasterio.cache.invalidate` all hung GDAL against this server (stack: inside `rasterio.open`, with the server idle in `select`), even with `Connection: close`. That was not diagnosed. Time-boxed.

@@ -274,3 +274,16 @@ def test_a_listed_pairing_change_drives_the_rebuild_publish_and_commit():
     assert names.index("Pair DEM tiles with their DSM siblings") \
         < names.index("Check the pairing rebuild list") \
         < names.index("Rebuild items whose DSM pairing or footprint changed")
+
+
+def test_a_failing_prune_keeps_the_list_and_still_commits(tmp_path):
+    """Under bash -e, a prune that raised used to abort the step before its commit."""
+    def corrupt(work, stac_out):
+        urls = pairing_setup(work, stac_out)
+        sys.path.insert(0, os.path.join(ROOT, "scripts"))
+        from stac_utils import url_to_item_id
+        (stac_out / f"{url_to_item_id(urls[0])}.json").write_text("{not json")
+
+    origin = run_step(tmp_path, "success", "success", setup=corrupt)
+    assert len(origin["data/urls_pairing_changed.txt"].splitlines()) == 2
+    assert origin["data/stac_geotiff_checks.csv"] == "after\n"

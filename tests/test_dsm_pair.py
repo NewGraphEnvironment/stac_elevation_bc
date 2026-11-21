@@ -529,8 +529,11 @@ def test_the_pairing_list_accumulates_across_runs(tmp_path, monkeypatch):
 
     The next run's diff against it is then empty, so a list rebuilt from "this
     run's diff" would forget every URL the failed run did not publish. The list
-    must keep what an earlier run put on it.
+    must keep what an earlier run put on it -- except a DEM deleted upstream
+    since, whose rebuild would republish a tile that no longer exists.
     """
+    import csv as _csv
+    import dsm_pair
     from stac_utils import PATH_S3
 
     dem = fixture("suffix_dem.txt")[:3]
@@ -539,29 +542,49 @@ def test_the_pairing_list_accumulates_across_runs(tmp_path, monkeypatch):
     listing["dem"].write_text("".join(f"{PATH_S3}/{k}\n" for k in dem))
     listing["dsm"].write_text("".join(f"{PATH_S3}/{k}\n" for k in dsm))
     listing["groups"].write_text("".join(f"{g}\n" for g in groups_of(dsm)))
-
-    # The previous run had no DSM for any of the three, so all three changed.
     pairs = tmp_path / "pairs.csv"
-    _pairs_csv_write(pairs, [(k, "") for k in dem])
-    changed = tmp_path / "changed.txt"
-    left_over = f"{PATH_S3}/000/000a/2020/dem/left_over_by_a_failed_run.tif"
-    changed.write_text(f"{left_over}\n{PATH_S3}/{dem[0]}\n")
+    args = ["--dem-keys", str(listing["dem"]), "--dsm-keys", str(listing["dsm"]),
+            "--dsm-groups", str(listing["groups"]), "--pairs-csv", str(pairs),
+            "--report", str(tmp_path / "report.md")]
 
-    rc = _run_main(monkeypatch,
-                   "--dem-keys", str(listing["dem"]), "--dsm-keys", str(listing["dsm"]),
-                   "--dsm-groups", str(listing["groups"]), "--pairs-csv", str(pairs),
-                   "--report", str(tmp_path / "report.md"), "--changed-urls", str(changed))
-    assert rc == 0
+    # The previous run's pairing, as it would write it, but with no DSM for
+    # dem[0] and dem[1]: those two changed. dem[2] did not.
+    result = dsm_pair.pairs_build([f"{PATH_S3}/{k}" for k in dem],
+                                  [f"{PATH_S3}/{k}" for k in dsm], groups_of(dsm))
+    with open(pairs, "w", newline="") as fh:
+        w = _csv.DictWriter(fh, fieldnames=list(result["rows"][0]))
+        w.writeheader()
+        for i, r in enumerate(result["rows"]):
+            w.writerow({**r, "dsm_key": ""} if i < 2 else r)
+
+    # An earlier run that failed left dem[2] listed, and a DEM since deleted.
+    changed = tmp_path / "changed.txt"
+    deleted = f"{PATH_S3}/000/000a/2020/dem/deleted_upstream_since.tif"
+    changed.write_text(f"{PATH_S3}/{dem[2]}\n{deleted}\n{PATH_S3}/{dem[0]}\n")
+
+    assert _run_main(monkeypatch, *args, "--changed-urls", str(changed)) == 0
     lines = changed.read_text().splitlines()
-    assert lines == sorted({left_over, *(f"{PATH_S3}/{k}" for k in dem)})
+    assert lines == sorted(f"{PATH_S3}/{k}" for k in dem)
 
     # A run with nothing new to say keeps everything already listed.
-    rc = _run_main(monkeypatch,
-                   "--dem-keys", str(listing["dem"]), "--dsm-keys", str(listing["dsm"]),
-                   "--dsm-groups", str(listing["groups"]), "--pairs-csv", str(pairs),
-                   "--report", str(tmp_path / "report.md"), "--changed-urls", str(changed))
-    assert rc == 0
+    assert _run_main(monkeypatch, *args, "--changed-urls", str(changed)) == 0
     assert changed.read_text().splitlines() == lines
+
+
+def test_prune_keeps_everything_when_there_is_no_pairing_to_compare(tmp_path):
+    """A missing pairs csv must not make every dsm-less item read as done."""
+    from dsm_pair import pairing_changed_prune
+    from stac_utils import PATH_S3
+
+    url = f"{PATH_S3}/000/000a/2020/dem/bc_000a001_xli1m_utm10_2020.tif"
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    _item_write(staged, url)
+    changed = tmp_path / "changed.txt"
+    changed.write_text(f"{url}\n")
+
+    assert pairing_changed_prune(str(changed), str(staged), str(tmp_path / "absent.csv")) == (0, 1)
+    assert changed.read_text() == f"{url}\n"
 
 
 def _item_write(staged, url, dsm_href=None):

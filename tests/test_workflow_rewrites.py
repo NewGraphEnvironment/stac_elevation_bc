@@ -97,11 +97,10 @@ def test_the_pairing_list_is_rebuilt_on_every_run_that_lists_it():
     run made that false, and the change was then never rebuilt.
     """
     run = {s.get("name"): s for s in steps()}["Rebuild items whose DSM pairing or footprint changed"]["run"]
-    i = run.index("LISTS+=(data/urls_pairing_changed.txt)")
-    # Not inside an if-block: the line before it closes the footprint block.
-    assert run[:i].rstrip("\n").splitlines()[-1].strip() == "fi", \
+    assert "head -n 2000 data/urls_pairing_changed.txt" in run
+    # The old guard named these; nothing in the step may condition on them now.
+    assert "steps.detect.outputs.changes" not in run and "inputs.backfill" not in run, \
         "the pairing list is added under a condition again"
-    assert "for f in data/urls_pairing_changed.txt" not in run
 
 
 def test_monthly_validation_gate_is_a_full_pass_over_the_staged_set():

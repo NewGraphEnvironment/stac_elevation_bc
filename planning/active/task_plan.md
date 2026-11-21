@@ -46,8 +46,10 @@ One PR, two batches. The issue has no comments.
    Why the catalogue and not this run's list: the pairing list is now retried until it
    publishes. Judged against its own length, one permanently unreadable tile in a 5-URL list
    is a 20% drop rate. That would exit 1, skip the sync and block every month after it. That
-   is the failure mode `error_tolerable`'s docstring records. A mass failure (the objectstore
-   down) still exits 1 before the sync.
+   is the failure mode `error_tolerable`'s docstring records. *Corrected by the review:* an
+   outage on a list shorter than about 103 URLs exits 0 with the warning. Nothing is lost,
+   because the list is cumulative and good rows are no longer downgraded. When the gate does
+   fire, the month's new items wait for the next run, which is accepted.
 
 ## Phase 1: #53, correct the `no_raster_dsm` wording
 - [x] Test in `tests/test_dsm_pair.py`: the rendered report names the `dsm/` contents as an RGB-colourised point cloud with no raster, and does not say a surface model was published
@@ -76,26 +78,35 @@ One PR, two batches. The issue has no comments.
 
   The prune branch needs a `.venv/bin/python` shim in the scratch clone. Check how the harness handles the footprint branch today. Then put the bug back (no prune, or prune on any staged file) and watch the tests fail
 
+## Phase 3b: #57, review corrections (`review-74.md`)
+- [x] Rebuild at most 2000 listed pairing URLs per run (first 2000 sorted); the rest stay listed and the prune drains them (review Gap 1)
+- [x] Each prune in the commit step warns instead of aborting the commit: `if ! ...; then ::warning; fi`, footprint prune included (Gap 2)
+- [x] `pairing_changed_prune` keeps the whole list when the pairs lookup is empty (Gap 3)
+- [x] dsm_pair keeps only listed URLs still in the current DEM listing, and logs what it drops (Gap 4)
+- [x] The list write is a union written to a tmp file and `os.replace`d, not an append (Ordering 2)
+
 ## Phase 4: #56, retry the read and never downgrade a good row
 - [ ] Tests first, in a new `tests/test_item_create.py`. All network is mocked. Cases:
   - a read that fails once and then succeeds yields `is_geotiff: True`
   - a URL whose cached row is `is_geotiff: True` and needs an upgrade, and whose re-read fails every time, keeps its old `True` row in the written csv and is reported
-  - a new URL that fails is still recorded `False`. That is unchanged behaviour, stated so it is a decision
-- [ ] `stac_utils.geotiff_extract_metadata`: retry a failed read (3 attempts with a short backoff). Set `CPL_VSIL_CURL_NON_CACHED` to the URL inside `rasterio.Env` for each retry: GDAL caches a failed `/vsicurl/` open, so an in-process retry would otherwise send no request. Return an explicit "read failed" marker alongside `is_geotiff`, so the caller can tell a failed read from a confirmed non-GeoTIFF
-- [ ] `item_create.load_validation_cache`: when a `needs_upgrade` URL's re-read fails, put its old row back instead of the `False` one. Log each such URL with a count
+  - a new URL that fails is still recorded `False`. That is unchanged behaviour, stated so it is a decision; file it as its own issue naming move 1 (review Scope 1)
+  - tests monkeypatch `PATH_RESULTS_CSV` and chdir to tmp_path, never writing the committed cache (review Assumption 3)
+- [ ] `stac_utils.geotiff_extract_metadata`: retry a failed read (3 attempts with a short backoff), covering both the open and `cog_validate`'s second open (review Gap 6). Before each retry, call `rasterio.cache.invalidate(<url>)`, and set `CPL_VSIL_CURL_NON_CACHED` to the vsicurl path inside `rasterio.Env` for that attempt. Measured: a plain retry sends no request. No "read failed" marker, since it would add a column to the committed csv (Gap 5)
+- [ ] `item_create.load_validation_cache`: when a `needs_upgrade` URL's re-read comes back `is_geotiff False`, put its old row back. Log each such URL with a count
 
 ## Phase 5: #56, report what `--urls-file` dropped and gate on it
 - [ ] Test: on the `--urls-file` path, `main()` logs every URL `process_item` returned `None` for. It exits 0 within `error_tolerable` measured against the catalogue, and exits 1 above it
 - [ ] Implement it in `item_create.main`. `--incremental` keeps today's exit behaviour. Its shortfall is already warned by the `Count new items` step, and is out of scope for #56
-- [ ] Workflow rebuild step: emit a `::warning` with the dropped count, which is visible on a green run
+- [ ] item_create prints the `::warning` line itself, with the dropped count, so it is visible on a green run (review Gap 8). A population of 0 falls back to the list length and is logged
 
 ## Phase 6: docs and close-out
 - [ ] `CLAUDE.md`: add `urls_pairing_changed.txt` to the `data/` tree as a cumulative list pruned after sync. Note the read retry and that a good validation row is never downgraded
+- [ ] `scripts/README.md:222` (failed-read recovery), the update.yml "Each file is written empty" comment and its State-model header (review Gap 9)
 - [ ] Run `pytest` in full
 
 ## Owed at the end (reported, done after merge)
 
-- [ ] Read the 2026-12-03 monthly run log: either "no pairing changes" or a rebuild followed by a prune of urls_pairing_changed.txt
+- [ ] Read the 2026-12-03 monthly run log: either "no pairing changes" or a rebuild followed by a prune of urls_pairing_changed.txt. Both lists are empty on main, so this run does not exercise a no-change month with a listed URL. The harness and gate tests are the proof of that path (review Acceptance 3)
 
 ## Validation
 - [ ] Tests pass
