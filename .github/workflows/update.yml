@@ -60,6 +60,7 @@ on:
 permissions:
   id-token: write   # OIDC token for AWS
   contents: write   # commit refreshed data/ caches back to main
+  issues: write     # report a failed run (last step)
 
 concurrency:
   group: stac-update
@@ -599,3 +600,34 @@ jobs:
       - name: Session info
         if: always()
         run: Rscript -e 'sessioninfo::session_info()'
+
+      # Nothing else reports a failed run: GitHub emails a scheduled run's
+      # failure only to whoever last edited the cron line. So the last step
+      # opens one issue labelled run-failed, or comments on it while it is
+      # open, and repeat failures collect in one thread. cancelled() covers timeout-minutes, and a hand
+      # cancel too. It cannot fire for a job that never starts (a broken
+      # workflow file) or a queued run the concurrency group cancels; the next
+      # scheduled run is the backstop for both. A deadline of its own, so a
+      # hung gh call cannot hold the step until the job's timeout.
+      - name: Report a failed run as an issue
+        if: failure() || cancelled()
+        timeout-minutes: 5
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          RUN_ID: ${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          STATUS: ${{ job.status }}
+        run: |
+          label=run-failed
+          gh label create "$label" --force --color B60205 \
+            --description "The monthly update workflow failed"
+          n=$(gh issue list --label "$label" --state open --limit 1 --json number --jq '.[0].number // empty')
+          body="Run [$RUN_ID]($RUN_URL) (\`$EVENT\`, ${SHA:0:7}) ended **$STATUS**. Read the failed step with \`gh run view $RUN_ID --log-failed\`. Close this issue once a run passes."
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "$body"
+          else
+            gh issue create --title "Monthly update failed" --label "$label" --body "$body"
+          fi
