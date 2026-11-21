@@ -103,6 +103,7 @@ why the README's worked example renders `dem`-only and says so rather than swapp
 - ✅ Validation caching (GeoTIFF validation)
 - ✅ STAC JSON validation layer (new)
 - ✅ Monthly automation via GitHub Actions (`update.yml`: cron 3rd of month + workflow_dispatch, OIDC to S3); pgstac registration is a client-side upsert in this repo (#27), still run by hand because no runner can reach the host
+- ✅ A failed or cancelled monthly run opens one `run-failed` issue, or comments on the open one (#72); before that, the 2026-11-03 failure went unseen for 17 days. The run's R dependencies come from `DESCRIPTION`, which pins `ngr@v0.0.6`: ngr's earlier tags follow spacehakr's rename to bag and cannot install
 - ✅ Spatial extent optimized (hardcoded BC bbox)
 
 **Goals:**
