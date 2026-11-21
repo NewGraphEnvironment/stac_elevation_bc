@@ -1401,7 +1401,7 @@ Read a raw-accept `gh::gh()` result with `rawToChar(unclass(x))`, and stop on a 
 - `on.exit()` registers a handler on the *current frame*.
 
 ### A `data-raw/` script must load the source tree, not the installed package
-- `requireNamespace("pkg")` succeeds whenever **any** version is installed, so a guard shaped like `if (!requireNamespace("pkg")) pkgload::load_all()` silently runs against the installed one.
+- `requireNamespace("pkg")` succeeds whenever **any** version is installed.
 
 ### `lintr` also resolves against the installed package, not the source tree
 For a `no visible binding` lint on a constant added on this branch, check `exists(name, asNamespace(pkg))` and reinstall before changing code.
@@ -1435,6 +1435,9 @@ Chunk labels must be unique **within a document**.
 
 ### `R CMD build` ships the `.git` FILE when you build from a worktree
 A package built from a `git worktree` ships `.git` (a file holding the developer's absolute path), because R excludes only a `.git` directory; list `^\.git$` in `.Rbuildignore`.
+
+### Shiny serves a dependency's whole `src`
+Give an `htmlDependency` a `src` holding only its files: Shiny ignores `all_files`.
 
 ### `.Rbuildignore` has no comment syntax — every line is a live regex
 `tools:::inRbuildignore` loops over every non-empty line and ORs `grepl()` of it against the file list.
@@ -1491,13 +1494,16 @@ Leading empties survive and trailing ones do not, which is what makes it hard to
 Compare the file itself (`tools::md5sum()`) to show it was not modified, never two reader results.
 
 ### Under `R CMD check`, tests run from a temp dir against the INSTALLED package
-Two shapes, both green under `devtools::test()` and broken under `R CMD check`, `devtools::check()`, a tarball check, or an installed-tests run — the direction that costs the most time.
+Two shapes, both green under `devtools::test()` and broken under `R CMD check`, the direction that costs the most time.
 
 ### `dbConnect(SQLite(), path)` CREATES the file, so a read has a write side effect
 SQLite creates a database on connect.
 
 ### CSV whitespace: `trim_ws` and `strip.white` do not do what the name suggests
 - `readr::read_csv()` defaults to **`trim_ws = TRUE`** and silently strips leading and trailing whitespace.
+
+### readr crashes R on a byte its declared encoding does not define
+Before a `readr` read with a single-byte `locale(encoding = )`, refuse a file holding a byte that encoding leaves undefined.
 
 ### `R CMD check` rejects a filename containing a space
 - "checking for portable file names" fails on any file in the built package whose name has a space.
@@ -1509,7 +1515,7 @@ Sort with `method = "radix"` wherever the order builds a canonical string.
 A function whose *units* or *algorithm* are chosen by a session-wide setting behaves differently depending on what the caller did before reaching your code.
 
 ### `identical(-0, 0)` is TRUE in R, and the two still digest differently
-A hash over R's serialized bytes — which is what `digest::digest()` takes by default — separates positive and negative zero, even though every value comparison says they are the same.
+A hash over R's serialized bytes, as `digest::digest()` takes by default, separates positive and negative zero.
 
 ### Two repos pinning the same remote at different tags is an unsolvable install
 `Remotes:` pins are per-repo, but resolution is global.
@@ -1531,6 +1537,9 @@ A named `FUN.VALUE` looks like it guarantees row names on the returned matrix.
 
 ### One very long table cell hangs paged.js, and it presents as a Chrome timeout
 A ~600-character free-text field in a `kable` cell wedged `pagedown::chrome_print` indefinitely.
+
+### `pagedown::chrome_print()` in a test leaves Chrome's scratch directories in `$TMPDIR`
+Run it under `withr::with_envvar(c(TMPDIR = tempdir()))`: on Linux R CMD check reports the leftover `com.google.Chrome.*` directories as detritus.
 
 ### `kable()` with no `format` writes a pipe table, and `kable_styling()` rebuilds it without `table.attr`
 Pass `format = "html"` to `knitr::kable()` whenever its `table.attr` must reach the page through `kableExtra::kable_styling()`, and leave `label` at its default.
@@ -1557,7 +1566,7 @@ Scan R source for non-ASCII with `tools:::.check_package_ASCII_code()`, as `R CM
 Round the value after `chk::chk_whole_number()`, before arithmetic, and refuse non-finite values separately.
 
 ### `tryCatch(warning = )` DISCARDS the value the expression produced
-A `warning =` handler is not a filter — it replaces the whole expression, so a call that **succeeded** and merely warned returns the handler's value and the result is thrown away.
+A `warning =` handler is not a filter: it replaces the whole expression.
 
 ### Do not abort inside a handler for a warning raised from C++; note it and abort after the call returns
 Record a flag in the `withCallingHandlers()` handler, `invokeRestart("muffleWarning")`, and raise once the call has returned.
@@ -1584,7 +1593,7 @@ Putting per-group results back in input order by naming them looks right and ret
 `expect_equal(x, 12.529, tolerance = 2e-2)` accepts anything within **two percent** — so a figure published to three decimals survives drifting to `12.629`.
 
 ### `cli` reads `{.name}` as a STYLE, not a variable, and a fold can swallow an interpolation
-Two ways a `cli` message loses a value.
+Three ways a `cli` message misleads: two lose a value, one runs code.
 
 ### `[[` on a named ATOMIC vector with an absent key is an error, not `NULL`
 A list returns `NULL` for a missing `[[` key.
@@ -1611,7 +1620,7 @@ Normalise a numeric YAML sequence at load.
 testthat 3e writes `tests/testthat/_problems/*.R` and `tests/testthat/testthat-problems.rds` when tests fail.
 
 ### Postgres row order is never fixed unless the query fixes it, so a pick, a float sum and a presence check can each depend on it
-End every `ORDER BY` on a unique key, order any fetch whose rows are summed, and ask whether a value is loaded with an index walk, not `DISTINCT` or `EXISTS`.
+End every `ORDER BY` on a unique key.
 
 ### `sprintf("%g", x)` writes `Inf` and `NA` into SQL as bare words, which Postgres reads as column names
 A numeric formatter such as `sprintf("%.10g", x)` has no SQL form for non-finite values.
@@ -1638,7 +1647,7 @@ Inject a local value into a data-masked verb with `!!x` or `.env$x`, never a bar
 Search NASA's CMR and download with `curl` given the netrc directly, or check `earthdatalogin:::has_edl_netrc()` yourself first.
 
 ### A fetcher's test helper must make the network fail, not just mock the reader
-When a test mocks a downloader's reader and supplies fixture files, also mock the search and download functions to `stop()` by default, and re-mock them only in the tests that exercise that path.
+Where a test mocks a downloader's reader, mock its search and download functions to `stop()` too.
 
 ### testthat 3e `expect_message()` returns the condition, not the expression's value
 Assign inside the call, `expect_message(h <- f(x), "msg")`, never `h <- expect_message(f(x), "msg")`.
@@ -1671,10 +1680,10 @@ Give `returnValue()` a default and check its length: `trace(f, exit = quote(rec(
 Write `Rscript -e 'expr' a b`, not `Rscript -e 'expr' --args a b`.
 
 ### `read.delim()` quotes by default, so a `"` in a field silently swallows rows
-Read a TSV you wrote unquoted with `quote = "", na.strings = character(), comment.char = ""`.
+Read a TSV you wrote unquoted with `quote = "", na.strings = character(), comment.char = "", fill = FALSE`.
 
 ### duckdb in R: the query that autoloads `icu` binds unreliably, so `LOAD icu` before it
-Run `LOAD icu` on the connection before any query that needs it (`epoch()`, `year()`, a cast to `DATE` on a `TIMESTAMPTZ`), or use a function that needs no extension (`epoch_ms()`).
+Run `LOAD icu` on the connection before any query that needs it, or use a function that needs no extension.
 
 ### duckdb refuses a parent delete in the transaction that deleted its children
 Delete rows a foreign key still points at as separate autocommit statements, children first, never inside one `DBI::dbWithTransaction()`.
@@ -1695,7 +1704,7 @@ Assert a `function(...)` mock's argument names against the real callee's `formal
 The condition message carries the trailing newline, so an end anchor fails and the test reports "did not throw a message" even though the message printed.
 
 ### `load_all()` refuses an installed dependency below the `Imports:` floor, so measure old-against-new from a frozen worktree
-Run the old-dependency side of a before/after comparison from a `git worktree` of the pre-bump commit, and install the new version only after those runs finish.
+Run the old-dependency side of a before/after comparison from a `git worktree` of the pre-bump commit.
 
 ### `tryCatch()` nests its handlers, so a `stop()` in one is caught by a later one
 Record the condition in the handler (`hit <<- TRUE`) and raise after `tryCatch()` returns.
