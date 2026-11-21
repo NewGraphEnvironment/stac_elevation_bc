@@ -98,9 +98,9 @@ Approved by the owner at the plan gate, 2026-11-21.
 
 ## Validation
 
-- [ ] Tests pass (`uv run pytest tests/ -q`, and a fresh-clone `uv sync --locked` in a temp worktree)
-- [ ] `/code-check branch` clean (three-round floor)
-- [ ] PWF checkboxes match landed work
+- [x] Tests pass (`uv run pytest tests/ -q`, and a fresh-clone `uv sync --locked` in a temp worktree)
+- [x] `/code-check branch` clean (three-round floor)
+- [x] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion
 
 Verification: the lock's versions vs the CI run's set (diff listed); the stacs-tag test and the

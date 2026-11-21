@@ -52,6 +52,8 @@ When the plan finds that a batch, or one of its members, is more than one PR's w
 
 | Error | Resolution |
 |-------|------------|
+| `reticulate::use_virtualenv(".venv")` looks in `~/.virtualenvs` | `"./.venv"`: a path needs a slash |
+| Docker Desktop mounted `/private/tmp` empty, so a container saw no `pyproject.toml` | stream the tree in with `git archive HEAD \| docker run -i ...` |
 
 ## Phase 1: the lock against the run it replaces
 
@@ -120,4 +122,7 @@ Declined or already done:
 - Round 2 (spawned ~22:04Z): `reticulate::use_virtualenv(".venv")` reads a slash-less argument as a
   name under `~/.virtualenvs`, so both root `.qmd` setup chunks stopped. Reproduced with Rscript;
   `"./.venv"` loads the repo's venv. `scripts/stac_examples.qmd`'s `"../.venv"` already worked.
-| `reticulate::use_virtualenv(".venv")` looks in `~/.virtualenvs` | `"./.venv"`: a path needs a slash |
+- Round 3 (spawned 22:07Z): Clean. Asked for the mechanism behind round 2 (a location handed to a
+  tool that decides from its form what it names) and walked every place in the diff it reaches:
+  `--python 3.12`, `.venv/bin/...` steps (no `working-directory:` anywhere), both `--extent-from`
+  calls, `build_safe.sh`, the three `.qmd` paths, the git tag source, the tests' ROOT paths. All OK.
