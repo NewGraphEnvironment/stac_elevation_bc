@@ -30,7 +30,7 @@ In the commit step, when the sync did not succeed, restore `data/urls_list.txt` 
 - The sync is legitimately skipped on runs that succeed: deletions-only months and all-invalid batches (publish count 0). Restoring the listing on `sync != success` alone would re-detect those forever, so the predicate also needs the job status.
 - `job.status` is read the same way by the alarm step; `always()` steps see `failure` or `cancelled` there.
 - `detect_changes.R` writes urls_list, urls_dsm, dsm_groups, urls_new, urls_deleted (header lines 3-4). It writes urls_list.txt (line 141) BEFORE the DSM ratchet can stop() (exit 2).
-- `data/urls_new.txt` is tracked (last touched 5d3fa0a).
+- `data/urls_new.txt` is NOT tracked: 5d3fa0a deleted it (corrected after the plan review, which caught the first reading). So on most failed runs it is untracked and the restore leaves it uncommitted; the restore must still undo a staged deletion if a future HEAD tracks it.
 - footprints.csv rows for a failed month's new URLs are committed; next month re-detects them as new, footprint_extract finds them cached, and item_create builds them with that footprint. Consistent.
 - scripts/README.md "Oversized batches" also says a run "commits nothing" — false since the commit went always(), true again after this fix.
 
