@@ -11,8 +11,12 @@ name: Monthly incremental update
 # exits 1 with no urls_new.txt - item steps are skipped but the cache commit
 # still records the deletions.
 #
-# State model: data/ caches persist only via the end-of-job commit, so a
-# failed run discards its partial state and the next run re-detects cleanly.
+# State model: data/ caches persist only via the end-of-job commit, which runs
+# under always() so a failed or cancelled run keeps the progress it made. What
+# it does not keep is any claim of publication it cannot back: the rewrite
+# manifests are discarded unless the sync succeeded, and the detected listing
+# (every file detect_changes.R writes) is restored unless the sync succeeded or
+# the run succeeded without one, so the next run re-detects the same URLs (#63).
 # pgstac registration is NOT done here: no runner can reach the STAC host (no
 # tailnet, no deploy key). It is a client-side upsert run from a machine that
 # can - `stacs register --config stacs.toml --mode drift` (#49) - and it is
@@ -538,6 +542,9 @@ jobs:
         if: >-
           always() && (steps.detect.outputs.changes == 'true' || steps.footprints.outputs.pending == 'true'
           || inputs.backfill || inputs.rename || inputs.footprint)
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SYNC_OUTCOME: ${{ steps.sync.outcome }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -568,6 +575,30 @@ jobs:
               # only ever hide a real failure -- and this discard is the thing
               # standing between a failed run and a permanently skipped item.
               git reset -q -- "$f" || true          # not in HEAD on the first run
+              if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+                git checkout -q -- "$f"
+              else
+                echo "  $f is untracked; leaving it uncommitted"
+              fi
+            done
+          fi
+
+          # The listing is the same kind of claim: a URL in urls_list.txt is
+          # one the next detect will not call new, so item_create never builds
+          # it (#63). Keep what detect wrote only when the run's work reached
+          # S3, or when the run succeeded without needing a sync (a
+          # deletions-only month, an all-invalid batch "recorded as
+          # attempted"). A failed or cancelled run -- this step is always(), so
+          # a hand cancel and the job timeout land here too -- restores every
+          # file detect_changes.R writes, and the next run re-detects the same
+          # URLs. The other caches (validation, footprints) still commit: each
+          # records a fact about a source, not that its item was published.
+          if [ "$SYNC_OUTCOME" != "success" ] && [ "$JOB_STATUS" != "success" ]; then
+            echo "run ended $JOB_STATUS with sync $SYNC_OUTCOME -" \
+                 "restoring the detected listing so the next run re-detects it"
+            for f in data/urls_list.txt data/urls_dsm.txt data/dsm_groups.txt \
+                     data/urls_new.txt data/urls_deleted.txt; do
+              git reset -q -- "$f" || true
               if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
                 git checkout -q -- "$f"
               else

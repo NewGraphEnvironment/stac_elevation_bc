@@ -8,3 +8,4 @@
 - Next: start Phase 1
 - Phase 1: `tests/test_workflow_failed_run.py` runs the commit step's real shell in a scratch clone with a bare origin, per (job.status, sync.outcome) pair; detect outputs read from detect_changes.R's header. Against main's workflow: 6 red (every restore case), 3 green (the commit cases), each red on the content assertion, not a crash.
 - Plan review spawned in the background at the baseline.
+- Phase 2: restore block in `Commit refreshed caches` (env `JOB_STATUS`, `SYNC_OUTCOME`), header comment rewritten. Full suite 324 passed. Mutations in a detached worktree: guard disabled → 5 of the new tests red; guard reduced to the issue's literal `sync != success` → the deletions-only case (`success`, `skipped`) red.

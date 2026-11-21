@@ -56,14 +56,14 @@ still say a failed run persists nothing.
 
 ## Phase 2: The fix
 
-- [ ] In `Commit refreshed caches`: pass `JOB_STATUS: ${{ job.status }}` and
+- [x] In `Commit refreshed caches`: pass `JOB_STATUS: ${{ job.status }}` and
       `SYNC_OUTCOME: ${{ steps.sync.outcome }}` as env; add the restore block for the five
       detect outputs under decision 1's predicate, echoing what it restored and why
-- [ ] Rewrite the header comment's state-model paragraph (`update.yml:14-15`) to say what
+- [x] Rewrite the header comment's state-model paragraph (`update.yml:14-15`) to say what
       is true: a failed or cancelled run commits its caches but not the listing, so the
       next run re-detects the same URLs; rewrite manifests are discarded unless the sync
       succeeded
-- [ ] Tests green; restore the bug (delete the block) and confirm the behavioural tests go red
+- [x] Tests green; restore the bug (delete the block) and confirm the behavioural tests go red
 
 ## Phase 3: Docs
 
