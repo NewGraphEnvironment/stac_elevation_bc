@@ -115,3 +115,12 @@ def test_the_footprint_list_is_not_rebuilt_on_dispatch_or_when_too_long():
     add = run.index("LISTS+=(data/urls_footprint_changed.txt)")
     block = run[run.index('if [ "${{ inputs.footprint }}" = "true" ]'):add]
     assert '-gt 2000' in block and "elif" in block and "else" in block
+
+
+def test_the_collection_patch_widens_the_extent_from_the_detected_listing():
+    """#70: the monthly run is the only path that touches the published collection,
+    so the extent is widened there, from the listing detect has just written."""
+    names = [s.get("name") for s in steps()]
+    patch = steps()[names.index("Patch collection metadata")]["run"]
+    assert "--extent-from data/urls_list.txt" in patch
+    assert names.index("Detect changes") < names.index("Patch collection metadata")

@@ -202,8 +202,12 @@ jobs:
         # performed by the cron, reported by nothing. It fails loudly instead,
         # which is the correct answer to "someone merged a rename and has not
         # dispatched it".
+        # --extent-from: the temporal extent widens (never narrows) to cover the
+        # listing detect just wrote (#70). Before it, only a full build computed
+        # the extent, so the API served 2026 items under one ending 2025-06-05.
         run: |
-          ARGS=(--path "$STAC_OUTPUT_DIR/collection.json" --clear-version)
+          ARGS=(--path "$STAC_OUTPUT_DIR/collection.json" --clear-version
+                --extent-from data/urls_list.txt)
           if [ "${{ inputs.rename }}" = "true" ]; then
             ARGS+=(--allow-id-change)
           fi

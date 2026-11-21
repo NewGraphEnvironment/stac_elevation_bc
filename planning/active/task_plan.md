@@ -63,15 +63,15 @@ Approved by the owner at the plan gate, 2026-11-21.
 
 ## Phase 2: temporal extent (batch 4: #70)
 
-- [ ] Test first (`tests/test_collection_extent.py`): widen at the end, widen at the start, a listing
+- [x] Test first (`tests/test_collection_extent.py`): widen at the end, widen at the start, a listing
       inside the published interval changes nothing (the 2011-09-14 case), undated URLs ignored,
       idempotent second run, item hrefs untouched
-- [ ] Move the listing → extent computation into one function (`collection_patch.extent_temporal_widen`),
+- [x] Move the listing → extent computation into one function (`collection_patch.extent_temporal_widen`),
       used by `collection_create.py` too, so a full build and a patch cannot disagree
-- [ ] `collection_patch.py --extent-from <urls file>`: widen-only; reported in the change list so
+- [x] `collection_patch.py --extent-from <urls file>`: widen-only; reported in the change list so
       `--check` and the workflow's `changed` output see it
-- [ ] `update.yml` patch step passes `--extent-from data/urls_list.txt`
-- [ ] Workflow rewrite tests (`tests/test_workflow_rewrites.py` pattern) pin the flag in the step
+- [x] `update.yml` patch step passes `--extent-from data/urls_list.txt`
+- [x] Workflow rewrite tests (`tests/test_workflow_rewrites.py` pattern) pin the flag in the step
 
 ## Phase 3: docs
 

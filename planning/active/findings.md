@@ -65,3 +65,17 @@ stacs' `direct_url.json`, so the installed-from-the-tag check is kept.
 
 Mutations: the queryable pattern narrowed to `[a-h]` fails both pattern tests; the pyproject tag
 set to v0.5.0 fails the pin test. 354 tests pass on the locked env.
+
+## Phase 2: the extent against the live collection
+
+`collection_patch.py --check --extent-from data/urls_list.txt` over the S3 `collection.json`
+(fetched to scratch, 2026-11-21): exit 1, `temporal extent -> 2011-09-14T00:00:00Z/2026-05-06T00:00:00Z`
+and no other field. Written to the scratch copy: only `extent` differs, `links` identical,
+102,460 item links preserved by the script's own guard.
+
+Known edge, accepted: the monthly run widens against the listing it detected, which can include
+a URL whose item that run failed to build. The extent then covers a date one month early; the
+item is retried next run (#56), and the extent never claims less than the collection serves.
+
+Mutations: dropping the `lo < start` comparison (always replace the start) fails 6 extent
+tests, `test_never_shrinks` among them; dropping `--extent-from` from the workflow fails its pin.
