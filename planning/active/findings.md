@@ -110,3 +110,14 @@ Declined or already done:
   `--check` and compared `links` (identical, 102,460 preserved).
 - `stac_examples.qmd` imports `mercantile` and `stactools`, not in the lock: pre-existing, out of
   scope; `uv sync` would remove them from a local `.venv` that had them.
+
+## Code-check rounds
+
+- Round 1 (spawned 21:58Z): Clean, with its checks recorded in `review-round1.md`.
+- Linux amd64 (`python:3.12-bookworm`, uv 0.11.11, tree via `git archive`): `uv sync --locked`
+  resolves rasterio 1.5.2 / GDAL 3.12.2, stacs 0.6.0; 364 passed, 6 skipped (the R-dependent
+  `test_urls_scheme.py`, no `Rscript` and no `CI` in the container).
+- Round 2 (spawned ~22:04Z): `reticulate::use_virtualenv(".venv")` reads a slash-less argument as a
+  name under `~/.virtualenvs`, so both root `.qmd` setup chunks stopped. Reproduced with Rscript;
+  `"./.venv"` loads the repo's venv. `scripts/stac_examples.qmd`'s `"../.venv"` already worked.
+| `reticulate::use_virtualenv(".venv")` looks in `~/.virtualenvs` | `"./.venv"`: a path needs a slash |
