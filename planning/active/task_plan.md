@@ -86,13 +86,13 @@ One PR, two batches. The issue has no comments.
 - [x] The list write is a union written to a tmp file and `os.replace`d, not an append (Ordering 2)
 
 ## Phase 4: #56, retry the read and never downgrade a good row
-- [ ] Tests first, in a new `tests/test_item_create.py`. All network is mocked. Cases:
+- [x] Tests first, in a new `tests/test_item_create.py`. All network is mocked. Cases:
   - a read that fails once and then succeeds yields `is_geotiff: True`
   - a URL whose cached row is `is_geotiff: True` and needs an upgrade, and whose re-read fails every time, keeps its old `True` row in the written csv and is reported
-  - a new URL that fails is still recorded `False`. That is unchanged behaviour, stated so it is a decision; file it as its own issue naming move 1 (review Scope 1)
+  - a new URL that fails is still recorded `False`. That is unchanged behaviour, stated so it is a decision; filed as #80, naming move 1 (review Scope 1)
   - tests monkeypatch `PATH_RESULTS_CSV` and chdir to tmp_path, never writing the committed cache (review Assumption 3)
-- [ ] `stac_utils.geotiff_extract_metadata`: retry a failed read (3 attempts with a short backoff), covering both the open and `cog_validate`'s second open (review Gap 6). Before each retry, call `rasterio.cache.invalidate(<url>)`, and set `CPL_VSIL_CURL_NON_CACHED` to the vsicurl path inside `rasterio.Env` for that attempt. Measured: a plain retry sends no request. No "read failed" marker, since it would add a column to the committed csv (Gap 5)
-- [ ] `item_create.load_validation_cache`: when a `needs_upgrade` URL's re-read comes back `is_geotiff False`, put its old row back. Log each such URL with a count
+- [x] `stac_utils.geotiff_extract_metadata`: retry a failed read (3 attempts with a short backoff), covering both the open and `cog_validate`'s second open (review Gap 6). Before each retry, call `rasterio.cache.invalidate(<url>)`, and set `CPL_VSIL_CURL_NON_CACHED` to the vsicurl path inside `rasterio.Env` for that attempt. Measured: a plain retry sends no request. No "read failed" marker, since it would add a column to the committed csv (Gap 5)
+- [x] `item_create.load_validation_cache`: when a `needs_upgrade` URL's re-read comes back `is_geotiff False`, put its old row back. Log each such URL with a count
 
 ## Phase 5: #56, report what `--urls-file` dropped and gate on it
 - [ ] Test: on the `--urls-file` path, `main()` logs every URL `process_item` returned `None` for. It exits 0 within `error_tolerable` measured against the catalogue, and exits 1 above it

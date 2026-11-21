@@ -206,10 +206,13 @@ def load_validation_cache(urls_to_check: list[str]) -> dict:
     urls_to_validate = [url for url in urls_to_check
                         if url not in existing_urls
                         or url in needs_upgrade]
+    # Old rows set aside, not discarded: a re-read that fails puts its row back.
+    df_upgrading = df_existing.iloc[0:0]
     if needs_upgrade:
         # Drop old rows that will be re-extracted with spatial metadata
         urls_upgrading = needs_upgrade & set(urls_to_validate)
         if urls_upgrading:
+            df_upgrading = df_existing[df_existing["url"].isin(urls_upgrading)]
             df_existing = df_existing[
                 ~df_existing["url"].isin(urls_upgrading)
             ]
@@ -227,7 +230,21 @@ def load_validation_cache(urls_to_check: list[str]) -> dict:
                 desc="Extracting GeoTIFF metadata"
             ))
 
-        df_new = pd.DataFrame(new_results)
+        # A row that was a readable GeoTIFF is never downgraded by a read that
+        # failed (#56). The read is retried, but a failure that survives every
+        # attempt is far likelier to be the network than the tile, and the
+        # committed False row would drop a published tile from every later
+        # build. Its old row goes back, and it is re-read next run.
+        kept = {r["url"] for r in new_results
+                if not r["is_geotiff"]} & set(df_upgrading["url"])
+        if kept:
+            logger.warning("%d previously readable GeoTIFFs failed their re-read; their "
+                           "cached rows are kept, not marked unreadable: %s",
+                           len(kept), ", ".join(sorted(kept)))
+            new_results = [r for r in new_results if r["url"] not in kept]
+        df_new = pd.concat([pd.DataFrame(new_results, columns=all_columns),
+                            df_upgrading[df_upgrading["url"].isin(kept)]],
+                           ignore_index=True)
         df_all = pd.concat([df_existing, df_new], ignore_index=True) if len(df_existing) > 0 else df_new
         df_all.to_csv(PATH_RESULTS_CSV, index=False)
         logger.info("Saved %d validation results to %s", len(df_all), PATH_RESULTS_CSV)

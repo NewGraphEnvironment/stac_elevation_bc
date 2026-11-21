@@ -33,3 +33,9 @@
 - Tests: the accumulate test was reworked (a left-over current DEM is kept, a deleted DEM is dropped). New tests: an empty-lookup prune keeps everything, and a failing prune keeps the list and still commits; a mutation back to the old fatal prune fails it. The guard test now checks for the `head -n 2000` and for no `changes`/`backfill` condition. Full suite: 339 passed.
 - Measured (scratch, local flaky server): a plain in-process `/vsicurl/` retry after a 503 or 404 sends no request. `CPL_VSIL_CURL_NON_CACHED` gets through. The fail-then-retry sequence and `rasterio.cache.invalidate` were not measured, because the server hung GDAL.
 - Next: Phase 4
+
+## Phase 4, 2026-11-21
+- Completed: `stac_utils.geotiff_extract_metadata` retries `READ_ATTEMPTS = 3` times with a linear backoff, each attempt covering both the open and `cog_validate` (`_geotiff_read`). A retry first calls `_vsicurl_cache_clear` (`rasterio.cache.invalidate`) and sets `CPL_VSIL_CURL_NON_CACHED` to the vsicurl path. In `item_create.load_validation_cache`, the old rows of the `needs_upgrade` URLs are set aside, and any whose re-read still returns False are put back, logged by URL. No marker column was added.
+- Filed #80: a new URL whose every read fails is still recorded False and never retried (review Scope 1).
+- Tests: new `tests/test_item_create.py` (6 tests, no network, the cache in tmp_path). Mutations: `READ_ATTEMPTS = 1` fails 2 tests, and disabling the keep fails 3. Full suite: 345 passed.
+- Next: Phase 5
