@@ -675,8 +675,10 @@ jobs:
           fi
 
           # The pairing rebuild list is cumulative in the same way (#57): the
-          # new dem_dsm_pairs.csv commits whatever the run did, so the next
-          # run's diff will not list these URLs again. A URL leaves only after
+          # pairs csv is re-derived and diffed only on a run that detects a
+          # change, so a URL a run listed may never be listed again (a later
+          # walk can differ, and the 2000 cap carries URLs over); it stays
+          # until its item is published. A URL leaves only after
           # a successful sync: when its staged item carries the current pairing
           # (its dsm asset is the paired DSM, or it has none where the pairing
           # has none), or when its DEM has left the listing this commit keeps.

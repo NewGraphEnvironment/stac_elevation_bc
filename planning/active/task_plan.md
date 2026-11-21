@@ -71,7 +71,7 @@ One PR, two batches. The issue has no comments.
 ## Phase 3: #57, wire the list into `.github/workflows/update.yml`
 - [x] Rebuild step: include `data/urls_pairing_changed.txt` whenever it is non-empty, and drop the `changes == 'true'` condition. The comment that said the committed file was "already published" stops being true once the list carries unpublished URLs
 - [x] Make the rebuild step, the sync's upstream steps and the commit step's `if:` also fire on a no-change month whose pairing list is non-empty. One small step sets `pairing.outputs.pending`, as `footprints.outputs.pending` does
-- [x] Commit step: after a successful sync, run `dsm_pair.py --prune-changed "$STAC_OUTPUT_DIR"` and `git add` the list, next to the footprint prune. On a failed run, the appended list and the new pairs csv still commit, which is intended: the list now carries the URLs forward
+- [x] Commit step: after a successful sync, run `dsm_pair.py --prune-changed "$STAC_OUTPUT_DIR"` and `git add` the list, next to the footprint prune. On a failed run the appended list still commits, which is intended: the list carries the URLs forward. (*Revised by code-check round 3:* the pairs csv and its report are now restored with the listing on a failed run, c47d6ec.)
 - [x] Extend `tests/test_workflow_failed_run.py`, or add a sibling that runs the step's own shell:
   - a failed run keeps the pairing URLs
   - a run whose sync succeeded prunes exactly the staged-and-carrying URLs

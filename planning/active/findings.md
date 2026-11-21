@@ -60,3 +60,17 @@ Setup: a local `http.server` that fails the first request for each file and then
 | connection reset | ok | 3 | ok | 3 |
 
 A failed open is cached: the retry never reaches the server. With `NON_CACHED` set, GDAL's own handling got past the first failure. The fail-with-no-option-then-retry-with-it sequence, `GDAL_HTTP_MAX_RETRY` on a 503, and `rasterio.cache.invalidate` all hung GDAL against this server (stack: inside `rasterio.open`, with the server idle in `select`), even with `Connection: close`. That was not diagnosed. Time-boxed.
+
+**Closed by code-check round 4 (2026-11-21, `review-round4.md`).** A loopback server in a separate process answered 503 twice and then served a GeoTIFF.
+- With the branch's retry, `geotiff_extract_metadata` read it (`is_geotiff True`, epsg 3005).
+- With `_vsicurl_cache_clear` and `NON_CACHED` stubbed out, it returned False, and the server saw only 2 requests: the retries never reached it.
+
+So the cache bypass is what makes the retry work, measured end to end. My probe hung because its server ran in the same process as GDAL.
+
+## Code review (`/code-check branch`), 2026-11-21
+
+Four rounds. The mechanism round 3 named: the commit step chose what to restore on a failed run by who wrote a file (detect_changes.R), not by what its content depends on (the listing). So a committed derivation of a withheld listing outlived it.
+- Round 2's instance: the merge's drop of DEMs missing from the walk.
+- Round 3's instance: the pairs csv and its report.
+
+Round 3 enumerated every file the commit step can persist. Round 4 re-walked that table at c47d6ec: every row is safe or accepted.
