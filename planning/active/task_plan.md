@@ -100,16 +100,16 @@ One PR, two batches. The issue has no comments.
 - [x] item_create prints the `::warning` line itself, with the dropped count, so it is visible on a green run (review Gap 8). A population of 0 falls back to the list length and is logged
 
 ## Phase 6: docs and close-out
-- [ ] `CLAUDE.md`: add `urls_pairing_changed.txt` to the `data/` tree as a cumulative list pruned after sync. Note the read retry and that a good validation row is never downgraded
-- [ ] `scripts/README.md:222` (failed-read recovery), the update.yml "Each file is written empty" comment and its State-model header (review Gap 9)
-- [ ] Run `pytest` in full
+- [x] `CLAUDE.md`: add `urls_pairing_changed.txt` to the `data/` tree as a cumulative list pruned after sync. Note the read retry and that a good validation row is never downgraded
+- [x] `scripts/README.md:222` (failed-read recovery), the update.yml "Each file is written empty" comment and its State-model header (review Gap 9)
+- [x] Run `pytest` in full
 
 ## Owed at the end (reported, done after merge)
 
 - [ ] Read the 2026-12-03 monthly run log: either "no pairing changes" or a rebuild followed by a prune of urls_pairing_changed.txt. Both lists are empty on main, so this run does not exercise a no-change month with a listed URL. The harness and gate tests are the proof of that path (review Acceptance 3)
 
 ## Validation
-- [ ] Tests pass
+- [x] Tests pass
 - [ ] `/code-check` clean (once over the branch with `/code-check branch`)
 - [ ] PWF checkboxes match landed work
 - [ ] `/planning-archive` on completion

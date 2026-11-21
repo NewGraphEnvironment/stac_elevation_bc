@@ -17,6 +17,8 @@ name: Monthly incremental update
 # manifests are discarded unless the sync succeeded, and the detected listing
 # (every file detect_changes.R writes) is restored unless the sync succeeded or
 # the run succeeded without one, so the next run re-detects the same URLs (#63).
+# The pairs csv and the two rebuild lists commit either way: the lists are
+# cumulative, and a URL leaves one only once its item is published (#57, #2).
 # pgstac registration is NOT done here: no runner can reach the STAC host (no
 # tailnet, no deploy key). It is a client-side upsert run from a machine that
 # can - `stacs register --config stacs.toml --mode drift` (#49) - and it is
