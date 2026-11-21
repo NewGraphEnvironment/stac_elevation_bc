@@ -11,8 +11,12 @@ name: Monthly incremental update
 # exits 1 with no urls_new.txt - item steps are skipped but the cache commit
 # still records the deletions.
 #
-# State model: data/ caches persist only via the end-of-job commit, so a
-# failed run discards its partial state and the next run re-detects cleanly.
+# State model: data/ caches persist only via the end-of-job commit, which runs
+# under always() so a failed or cancelled run keeps the progress it made. What
+# it does not keep is any claim of publication it cannot back: the rewrite
+# manifests are discarded unless the sync succeeded, and the detected listing
+# (every file detect_changes.R writes) is restored unless the sync succeeded or
+# the run succeeded without one, so the next run re-detects the same URLs (#63).
 # pgstac registration is NOT done here: no runner can reach the STAC host (no
 # tailnet, no deploy key). It is a client-side upsert run from a machine that
 # can - `stacs register --config stacs.toml --mode drift` (#49) - and it is
@@ -524,6 +528,7 @@ jobs:
           overwrite: true   # re-runs of failed jobs otherwise 409 on the existing artifact
           path: |
             logs/*.log
+            data/urls_new.txt
             data/urls_access_checks.csv
             data/backfill_done.txt
             data/backfill_errors.txt
@@ -538,6 +543,9 @@ jobs:
         if: >-
           always() && (steps.detect.outputs.changes == 'true' || steps.footprints.outputs.pending == 'true'
           || inputs.backfill || inputs.rename || inputs.footprint)
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SYNC_OUTCOME: ${{ steps.sync.outcome }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -576,6 +584,34 @@ jobs:
             done
           fi
 
+          # The listing is the same kind of claim: a URL in urls_list.txt is
+          # one the next detect will not call new, so item_create never builds
+          # it (#63). Keep what detect wrote only when the run's work reached
+          # S3, or when the run succeeded without needing a sync (a
+          # deletions-only month, an all-invalid batch "recorded as
+          # attempted"). A failed or cancelled run -- this step is always(), so
+          # a hand cancel and the job timeout land here too -- restores every
+          # file detect_changes.R writes, and the next run re-detects the same
+          # URLs. The other caches (validation, footprints) still commit: each
+          # records a fact about a source, not that its item was published.
+          # The commit message says so, or a failed month's cache commit reads
+          # in the ledger exactly like a month that built its tiles.
+          WITHHELD=""
+          if [ "$SYNC_OUTCOME" != "success" ] && [ "$JOB_STATUS" != "success" ]; then
+            echo "run ended $JOB_STATUS with sync $SYNC_OUTCOME -" \
+                 "restoring the detected listing so the next run re-detects it"
+            WITHHELD="; run $JOB_STATUS, listing withheld"
+            for f in data/urls_list.txt data/urls_dsm.txt data/dsm_groups.txt \
+                     data/urls_new.txt data/urls_deleted.txt; do
+              git reset -q -- "$f" || true
+              if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+                git checkout -q -- "$f"
+              else
+                echo "  $f is untracked; leaving it uncommitted"
+              fi
+            done
+          fi
+
           # The footprint rebuild list is cumulative (footprint_extract.py): a
           # URL stays on it until ITS item has reached S3. Its rows in
           # footprints.csv are committed either way, so dropping a URL on any
@@ -593,7 +629,7 @@ jobs:
             echo "no cache changes to commit"
             exit 0
           fi
-          git commit -m "Monthly incremental update: refresh caches ($(date -u +%Y-%m))"
+          git commit -m "Monthly incremental update: refresh caches ($(date -u +%Y-%m)$WITHHELD)"
           git pull --rebase origin main
           git push origin HEAD:main
 
