@@ -56,15 +56,15 @@ One PR, two batches. The issue has no comments.
 - [x] Same correction in `CLAUDE.md` (the `dsm_groups.txt` line and the "`.laz`-only delivery" paragraph) and in `README.md:203-206` (with `README.Rmd` and the rendered `README.html`/`index.html` hand-edited the same way; no re-render, because the README runs live API chunks and move 3 owns the next render). #53 does not name the README, but it makes the same claim. Move 3 also edits the README, and only this bullet overlaps
 
 ## Phase 2: #57, make the pairing list cumulative and prunable (`scripts/dsm_pair.py`)
-- [ ] Tests first:
+- [x] Tests first:
   - a second run appends to the list instead of replacing it
   - the list is deduped and sorted
   - prune drops a URL whose staged item carries the current `dsm` href
   - prune keeps a URL whose item is missing, or whose `dsm` is stale or absent
   - prune drops a URL that is now unpaired when its staged item has no `dsm`
-- [ ] Open `--changed-urls` for append, then finalize it with a dedupe and sort. Reuse `footprint_extract.changed_finalize` and `urls_read` rather than a copy, unless importing them pulls in heavy dependencies. Check that when the code is written
-- [ ] Add `--prune-changed STAGED_DIR`. It reads the current pairs csv through `item_create.dsm_lookup_load` (`scripts/item_create.py:58`) or an equivalent pure reader, and writes the kept URLs atomically (tmp file, then `os.replace`). If importing `item_create` is heavy, factor the reader into `dsm_pair`
-- [ ] Update the docstring and `CHANGED_URLS_FILE` comment to say the list is cumulative and pruned only after a successful sync
+- [x] Open `--changed-urls` for append, then finalize it with a dedupe and sort. Reuse `footprint_extract.changed_finalize` and `urls_read` rather than a copy, unless importing them pulls in heavy dependencies. Check that when the code is written
+- [x] Add `--prune-changed STAGED_DIR`. It reads the current pairs csv through `item_create.dsm_lookup_load` (`scripts/item_create.py:58`) or an equivalent pure reader, and writes the kept URLs atomically (tmp file, then `os.replace`). If importing `item_create` is heavy, factor the reader into `dsm_pair`
+- [x] Update the docstring and `CHANGED_URLS_FILE` comment to say the list is cumulative and pruned only after a successful sync
 
 ## Phase 3: #57, wire the list into `.github/workflows/update.yml`
 - [ ] Rebuild step: include `data/urls_pairing_changed.txt` whenever it is non-empty, and drop the `changes == 'true'` condition. The comment that said the committed file was "already published" stops being true once the list carries unpublished URLs

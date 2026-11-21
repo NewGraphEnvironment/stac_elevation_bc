@@ -25,24 +25,38 @@ Every DEM lands in exactly one bucket:
 Nothing is ever dropped silently. The counts of those five buckets sum to the
 DEM input count, and the script asserts that before writing anything.
 
+The rebuild list (--changed-urls) is CUMULATIVE (#57). Each run appends the
+DEM URLs whose pairing changed, and a URL leaves the list only through
+--prune-changed: after a successful sync, when its staged item carries the
+current pairing. The workflow commits the new pairs csv even when the run
+fails, so the next run's diff against it comes out empty. A list rebuilt from
+"this run's diff" would therefore forget every change a failed run did not
+publish, and that item would never gain its dsm asset.
+
 Usage:
     python scripts/dsm_pair.py                    # write pairs csv + report
     python scripts/dsm_pair.py --dry-run          # print the summary only
+    python scripts/dsm_pair.py --prune-changed DIR  # after a successful sync
 """
 
 import argparse
 import csv
+import json
 import logging
 import os
 import sys
 from collections import Counter, defaultdict
 
+from footprint_extract import changed_finalize, urls_read
 from stac_utils import (
+    ASSET_DSM,
     PATH_S3,
     convention_classify,
+    encode_url_for_gdal,
     pair_key,
     tile_key_parse,
     url_scheme_check,
+    url_to_item_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -56,9 +70,10 @@ DSM_KEYS_FILE = "data/urls_dsm.txt"
 DSM_GROUPS_FILE = "data/dsm_groups.txt"
 PAIRS_CSV = "data/dem_dsm_pairs.csv"
 REPORT_MD = "data/dsm_pairing_report.md"
-# DEM URLs whose paired DSM changed since the last run. A surface model can
-# arrive for a DEM that is already in the catalog, and nothing else would ever
-# rebuild that item -- item_create.py only ever sees newly-listed DEM URLs.
+# DEM URLs whose paired DSM changed and whose item has not been published
+# with it yet. A surface model can arrive for a DEM that is already in the
+# catalog, and nothing else would ever rebuild that item -- item_create.py
+# only ever sees newly-listed DEM URLs. Cumulative: see the module docstring.
 CHANGED_URLS_FILE = "data/urls_pairing_changed.txt"
 
 # Statuses. `paired` is the only one that yields a dsm asset; the rest are
@@ -271,6 +286,81 @@ def pairing_changed(rows: list[dict], previous_csv: str) -> list[str]:
     ]
 
 
+def dsm_lookup_load(path: str = PAIRS_CSV) -> dict[str, str]:
+    """Map each DEM URL to its paired DSM URL, from this script's pairs csv.
+
+    A missing pairs file returns an empty lookup and logs a warning rather than
+    aborting: items are still valid without the second asset, and the DEM build
+    is the more important of the two. It is a warning and not silence because
+    "every item lost its dsm asset" and "there genuinely are no pairs" must not
+    look the same in a log.
+
+    Only `paired` rows yield an asset. Every other status - no_raster_dsm,
+    no_dsm_dir, unpaired, unparseable - is a declared gap recorded in
+    data/dsm_pairing_report.md, not something to guess at here.
+
+    Lives here, beside the writer of the csv it reads; item_create.py imports
+    it, and so does the rebuild-list prune below, so the item a rebuild writes
+    and the test that releases it from the list read one lookup.
+    """
+    if not os.path.exists(path):
+        logger.warning("No DSM pairs file at %s - items will be built with no "
+                       "dsm asset. Run scripts/dsm_pair.py first.", path)
+        return {}
+
+    lookup = {}
+    with open(path, newline="") as fh:
+        for row in csv.DictReader(fh):
+            if row["status"] != PAIRED or not row["dsm_key"]:
+                continue
+            lookup[f"{PATH_S3}/{row['dem_key']}"] = f"{PATH_S3}/{row['dsm_key']}"
+
+    if not lookup:
+        logger.warning("DSM pairs file %s contained no paired rows", path)
+    else:
+        logger.info("Loaded %d DEM->DSM pairs from %s", len(lookup), path)
+    return lookup
+
+
+def pairing_changed_prune(path: str, staged_dir: str,
+                          pairs_csv: str = PAIRS_CSV) -> tuple[int, int]:
+    """Drop from the rebuild list every URL whose staged item carries its pairing. (pruned, kept)
+
+    Called only after a successful sync, so a staged item is a published one.
+    "Carries its pairing" is the property itself (decided on #74): the item
+    JSON is staged, and its `dsm` asset href is the current pairing's DSM,
+    encoded as item_create writes it -- or it has no `dsm` asset where the
+    current pairing has none. Not "the rebuild step exited 0": item_create
+    drops a URL it fails on and still exits 0. Not "a file is staged" either:
+    a staged item with a stale or missing dsm did not carry the change. A URL
+    that keeps failing stays listed and is retried every run, visibly. Same
+    shape as footprint_extract.changed_prune.
+    """
+    if not os.path.exists(path):
+        return 0, 0
+    urls = urls_read(path)
+    lookup = dsm_lookup_load(pairs_csv)
+
+    def done(u):
+        p = os.path.join(staged_dir, f"{url_to_item_id(u)}.json")
+        if not os.path.exists(p):
+            return False
+        with open(p) as fh:
+            body = json.load(fh)
+        asset = (body.get("assets") or {}).get(ASSET_DSM)
+        want = lookup.get(u)
+        if want is None:
+            return asset is None
+        return asset is not None and asset.get("href") == encode_url_for_gdal(want)
+
+    kept = sorted({u for u in urls if not done(u)})
+    tmp = f"{path}.tmp"
+    with open(tmp, "w") as fh:
+        fh.writelines(f"{u}\n" for u in kept)
+    os.replace(tmp, path)
+    return len(set(urls)) - len(kept), len(kept)
+
+
 def summarize(result: dict) -> dict:
     """Counts by status and, for paired rows, by naming convention."""
     rows = result["rows"]
@@ -433,11 +523,21 @@ def main() -> int:
     parser.add_argument("--changed-urls", default=CHANGED_URLS_FILE)
     parser.add_argument("--dry-run", action="store_true",
                         help="Print the summary without writing outputs")
+    parser.add_argument("--prune-changed", metavar="STAGED_DIR", default=None,
+                        help="After a successful sync: drop from --changed-urls every URL "
+                             "whose item in STAGED_DIR carries the current pairing, then exit")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO,
                         format="%(asctime)s [%(levelname)s] %(message)s",
                         datefmt="%H:%M:%S")
+
+    if args.prune_changed:
+        pruned, kept = pairing_changed_prune(args.changed_urls, args.prune_changed,
+                                             args.pairs_csv)
+        logger.info("Pairing rebuild list: %d published and pruned, %d kept for the "
+                    "next run", pruned, kept)
+        return 0
 
     try:
         dem_keys = keys_load(args.dem_keys, "DEM")
@@ -480,8 +580,14 @@ def main() -> int:
         logger.info("No pairing changes since the last run")
 
     os.makedirs(os.path.dirname(args.pairs_csv) or ".", exist_ok=True)
-    with open(args.changed_urls, "w") as fh:
+    # Append, never overwrite: the list holds every change not yet published,
+    # and only --prune-changed takes a URL off it.
+    with open(args.changed_urls, "a") as fh:
         fh.write("".join(f"{PATH_S3}/{k}\n" for k in changed))
+    listed = changed_finalize(args.changed_urls)
+    if listed:
+        logger.info("%d DEM items on the cumulative rebuild list %s",
+                    listed, args.changed_urls)
 
     with open(args.pairs_csv, "w", newline="") as fh:
         writer = csv.DictWriter(

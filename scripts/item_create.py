@@ -15,7 +15,6 @@ Usage:
 
 import argparse
 import concurrent.futures
-import csv
 import glob
 import logging
 import os
@@ -28,7 +27,7 @@ from datetime import datetime, timezone
 from pystac import Link, RelType
 from tqdm import tqdm
 
-from dsm_pair import PAIRED, PAIRS_CSV
+from dsm_pair import dsm_lookup_load
 from item_fields import footprints_load, has_footprint, pystac_item_fields_apply
 from stac_utils import (
     ASSET_DEM,
@@ -42,49 +41,12 @@ from stac_utils import (
     get_output_dir,
     url_scheme_check,
     url_to_item_id,
-    PATH_S3,
     PATH_S3_JSON,
     PATH_S3_STAC,
     PATH_RESULTS_CSV,
 )
 
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# DSM Pairing
-# =============================================================================
-
-def dsm_lookup_load(path: str = PAIRS_CSV) -> dict[str, str]:
-    """Map each DEM URL to its paired DSM URL, from scripts/dsm_pair.py output.
-
-    A missing pairs file returns an empty lookup and logs a warning rather than
-    aborting: items are still valid without the second asset, and the DEM build
-    is the more important of the two. It is a warning and not silence because
-    "every item lost its dsm asset" and "there genuinely are no pairs" must not
-    look the same in a log.
-
-    Only `paired` rows yield an asset. Every other status - no_raster_dsm,
-    no_dsm_dir, unpaired, unparseable - is a declared gap recorded in
-    data/dsm_pairing_report.md, not something to guess at here.
-    """
-    if not os.path.exists(path):
-        logger.warning("No DSM pairs file at %s - items will be built with no "
-                       "dsm asset. Run scripts/dsm_pair.py first.", path)
-        return {}
-
-    lookup = {}
-    with open(path, newline="") as fh:
-        for row in csv.DictReader(fh):
-            if row["status"] != PAIRED or not row["dsm_key"]:
-                continue
-            lookup[f"{PATH_S3}/{row['dem_key']}"] = f"{PATH_S3}/{row['dsm_key']}"
-
-    if not lookup:
-        logger.warning("DSM pairs file %s contained no paired rows", path)
-    else:
-        logger.info("Loaded %d DEM->DSM pairs from %s", len(lookup), path)
-    return lookup
 
 
 # =============================================================================
