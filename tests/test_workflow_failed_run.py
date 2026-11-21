@@ -14,9 +14,11 @@ each (job status, sync outcome) pair, and it is executed in a scratch clone
 whose origin is a local bare repository.
 """
 
+import json
 import os
 import re
 import subprocess
+import sys
 
 import pytest
 import yaml
@@ -70,12 +72,15 @@ def git(cwd, *args, env=None):
                           capture_output=True, text=True).stdout
 
 
-def run_step(tmp_path, job_status, sync_outcome, untracked=(), deleted=(), origin_moves=False):
+def run_step(tmp_path, job_status, sync_outcome, untracked=(), deleted=(), origin_moves=False,
+             setup=None):
     """Run the commit step after a run that rewrote every detect output; return origin's files.
 
     `untracked`: outputs absent from HEAD. `deleted`: outputs the run removed
     (detect deletes urls_new.txt on a month with none). `origin_moves`: another
     commit lands on origin first, so the step's `git pull --rebase` has work to do.
+    `setup(work, stac_out)`: more of what the run left behind, written just
+    before the step runs.
     """
     env = {
         "PATH": os.environ["PATH"],
@@ -91,9 +96,10 @@ def run_step(tmp_path, job_status, sync_outcome, untracked=(), deleted=(), origi
     (work / "data").mkdir()
     outputs = detect_outputs()
     tracked = [f for f in outputs if f not in untracked] + [
-        "data/stac_geotiff_checks.csv", "data/urls_footprint_changed.txt"]
+        "data/stac_geotiff_checks.csv", "data/urls_footprint_changed.txt",
+        "data/urls_pairing_changed.txt"]
     for f in tracked:
-        (work / f).write_text("" if f.endswith("footprint_changed.txt") else "before\n")
+        (work / f).write_text("" if f.endswith("_changed.txt") else "before\n")
     git(work, "add", "-A", env=env)
     git(work, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "seed", env=env)
     git(work, "push", "-q", "origin", "main", env=env)
@@ -112,6 +118,8 @@ def run_step(tmp_path, job_status, sync_outcome, untracked=(), deleted=(), origi
             (work / f).unlink()
         else:
             (work / f).write_text("after\n")
+    if setup:
+        setup(work, tmp_path / "stac_out")
 
     step = commit_step()
     values = {"job.status": job_status, "steps.sync.outcome": sync_outcome}
@@ -125,7 +133,8 @@ def run_step(tmp_path, job_status, sync_outcome, untracked=(), deleted=(), origi
         p = subprocess.run(["git", "--git-dir", str(origin), "show", f"main:{f}"],
                            env=env, capture_output=True, text=True)
         return p.stdout if p.returncode == 0 else None
-    files = {f: on_origin(f) for f in outputs + ["data/stac_geotiff_checks.csv"]}
+    files = {f: on_origin(f) for f in outputs + ["data/stac_geotiff_checks.csv",
+                                                 "data/urls_pairing_changed.txt"]}
     files["message"] = git(origin, "log", "-1", "--format=%s", "main", env=env).strip()
     files["README"] = on_origin("README")
     return files
@@ -187,3 +196,81 @@ def test_the_commit_step_names_every_detect_output():
     run = commit_step()["run"]
     for f in detect_outputs():
         assert f in run, f"{STEP} does not restore {f}"
+
+
+# ---------------------------------------------------------------------------
+# The pairing rebuild list (#57): kept on a failed run, pruned by property
+# ---------------------------------------------------------------------------
+
+def pairing_setup(work, stac_out):
+    """A run that re-paired two DEMs and staged one item carrying its new DSM.
+
+    The other item is staged without the dsm asset, which is what a rebuild
+    that did not carry the change leaves: it must stay listed. The step runs
+    the real `dsm_pair.py --prune-changed`, so the scratch clone gets the
+    scripts and a `.venv/bin/python` that is this interpreter.
+    """
+    sys.path.insert(0, os.path.join(ROOT, "scripts"))
+    from stac_utils import ASSET_DSM, PATH_S3, encode_url_for_gdal, url_to_item_id
+
+    (work / "scripts").symlink_to(os.path.abspath(os.path.join(ROOT, "scripts")))
+    shim = work / ".venv" / "bin" / "python"
+    shim.parent.mkdir(parents=True)
+    shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    shim.chmod(0o755)
+
+    dem = [f"000/000a/2020/dem/bc_000a00{n}_xli1m_utm10_2020.tif" for n in (1, 2)]
+    dsm = [d.replace("/dem/", "/dsm/").replace(".tif", "_dsm.tif") for d in dem]
+    with open(work / "data" / "dem_dsm_pairs.csv", "w") as fh:
+        fh.write("dem_key,dsm_key,group,tile_id,convention,status\n")
+        for a, b in zip(dem, dsm):
+            fh.write(f"{a},{b},000/000a/2020,t,suffix,paired\n")
+    urls = [f"{PATH_S3}/{d}" for d in dem]
+    (work / "data" / "urls_pairing_changed.txt").write_text("".join(f"{u}\n" for u in urls))
+
+    stac_out.mkdir(exist_ok=True)
+    for u, d, carries in zip(urls, dsm, (True, False)):
+        assets = {"dem": {"href": u}}
+        if carries:
+            assets[ASSET_DSM] = {"href": encode_url_for_gdal(f"{PATH_S3}/{d}")}
+        with open(stac_out / f"{url_to_item_id(u)}.json", "w") as fh:
+            json.dump({"id": url_to_item_id(u), "assets": assets}, fh)
+    return urls
+
+
+@pytest.mark.parametrize("job_status,sync_outcome", [
+    ("failure", "skipped"),      # the rebuild or a gate failed before the sync
+    ("failure", "failure"),      # the sync itself failed
+    ("cancelled", "skipped"),
+    ("success", "skipped"),      # nothing reached S3, so nothing is published
+])
+def test_the_pairing_list_is_kept_when_nothing_was_published(tmp_path, job_status, sync_outcome):
+    origin = run_step(tmp_path, job_status, sync_outcome, setup=pairing_setup)
+    assert len(origin["data/urls_pairing_changed.txt"].splitlines()) == 2
+
+
+def test_a_published_run_prunes_only_the_items_carrying_their_pairing(tmp_path):
+    urls = []
+    origin = run_step(tmp_path, "success", "success",
+                      setup=lambda w, s: urls.extend(pairing_setup(w, s)))
+    assert origin["data/urls_pairing_changed.txt"].splitlines() == [urls[1]]
+
+
+def test_a_listed_pairing_change_drives_the_rebuild_publish_and_commit():
+    """A month with no upstream change must still rebuild what an earlier run left listed.
+
+    Without `steps.pairing.outputs.pending` in these gates, a no-change month
+    skips the rebuild and the commit, and the URLs wait for the next upstream
+    change, however long that is.
+    """
+    with open(WF) as fh:
+        wf = yaml.safe_load(fh)
+    by_name = {s.get("name"): s for s in wf["jobs"]["update"]["steps"]}
+    names = [s.get("name") for s in wf["jobs"]["update"]["steps"]]
+    for name in ("Rebuild items whose DSM pairing or footprint changed",
+                 "Count items to publish", STEP):
+        assert "steps.pairing.outputs.pending == 'true'" in by_name[name]["if"], name
+    # The flag is set after the pairing runs and before anything it gates.
+    assert names.index("Pair DEM tiles with their DSM siblings") \
+        < names.index("Check the pairing rebuild list") \
+        < names.index("Rebuild items whose DSM pairing or footprint changed")

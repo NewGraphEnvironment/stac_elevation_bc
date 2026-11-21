@@ -89,11 +89,18 @@ def test_new_urls_are_passed_only_when_this_run_found_some():
     assert 'steps.detect.outputs.new_urls }}" = "true" ]; then NEW=(--new-urls data/urls_new.txt)' in run
 
 
-def test_the_pairing_list_is_rebuilt_only_on_a_run_that_repaired():
+def test_the_pairing_list_is_rebuilt_on_every_run_that_lists_it():
+    """It is cumulative (#57): every URL on it is a change not yet published.
+
+    It was once added only on a run that re-paired, on the reasoning that the
+    committed file was the last change-month's and already published. A failed
+    run made that false, and the change was then never rebuilt.
+    """
     run = {s.get("name"): s for s in steps()}["Rebuild items whose DSM pairing or footprint changed"]["run"]
     i = run.index("LISTS+=(data/urls_pairing_changed.txt)")
-    guard = run[run.rfind("if [", 0, i):i]
-    assert "steps.detect.outputs.changes" in guard and "inputs.backfill" in guard
+    # Not inside an if-block: the line before it closes the footprint block.
+    assert run[:i].rstrip("\n").splitlines()[-1].strip() == "fi", \
+        "the pairing list is added under a condition again"
     assert "for f in data/urls_pairing_changed.txt" not in run
 
 

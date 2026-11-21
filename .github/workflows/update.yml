@@ -286,6 +286,20 @@ jobs:
             echo "::warning title=Item shortfall::created $CREATED of $NEW new items - some source URLs failed metadata extraction or were invalid; see run-logs artifact and the triage notes in scripts/README.md"
           fi
 
+      # The pairing rebuild list is cumulative (#57): dsm_pair.py appends to
+      # it, and only the commit step's prune, after a successful sync, takes a
+      # URL off. A URL a failed run left on it is still owed a rebuild on a
+      # month with no upstream change, so `pending` drives the rebuild,
+      # publish and commit steps below the way the footprint step's does.
+      - name: Check the pairing rebuild list
+        id: pairing
+        if: steps.detect.outcome == 'success'
+        run: |
+          if [ -s data/urls_pairing_changed.txt ]; then
+            echo "pairing rebuild list: $(wc -l < data/urls_pairing_changed.txt | tr -d ' ') URL(s) not yet published with their pairing"
+            echo "pending=true" >> "$GITHUB_OUTPUT"
+          fi
+
       # A DSM can arrive for a DEM already in the catalog, and a footprint can
       # arrive for an item built without one (#2). Nothing else would rebuild
       # those items -- item_create.py otherwise only ever sees newly-listed DEM
@@ -293,11 +307,13 @@ jobs:
       # when nothing changed, so the step is a cheap no-op.
       - name: Rebuild items whose DSM pairing or footprint changed
         id: rebuild
-        if: steps.detect.outputs.changes == 'true' || steps.footprints.outputs.pending == 'true'
+        if: >-
+          steps.detect.outputs.changes == 'true' || steps.footprints.outputs.pending == 'true'
+          || steps.pairing.outputs.pending == 'true'
         run: |
-          # The pairing list only when this run re-paired: dsm_pair writes it on
-          # runs with upstream changes, and on a footprint-only run the
-          # committed file is the last change-month's -- already published.
+          # The pairing list whenever it is non-empty: it is cumulative (#57),
+          # so everything on it is a pairing change not yet published, whether
+          # this run re-paired or an earlier run failed before its sync.
           #
           # The footprint list is skipped on the footprint dispatch, which
           # rewrites every published item itself, and when it is too long to
@@ -316,9 +332,7 @@ jobs:
           else
             LISTS+=(data/urls_footprint_changed.txt)
           fi
-          if [ "${{ steps.detect.outputs.changes }}" = "true" ] || [ "${{ inputs.backfill }}" = "true" ]; then
-            LISTS+=(data/urls_pairing_changed.txt)
-          fi
+          LISTS+=(data/urls_pairing_changed.txt)
           for f in "${LISTS[@]}"; do
             if [ -f "$f" ]; then cat "$f"; fi
           done | sort -u > "$RUNNER_TEMP/urls_rebuild.txt"
@@ -391,6 +405,7 @@ jobs:
         id: publish
         if: >-
           steps.detect.outputs.changes == 'true' || steps.footprints.outputs.pending == 'true'
+          || steps.pairing.outputs.pending == 'true'
           || inputs.backfill || inputs.rename || inputs.footprint
         run: |
           TOTAL=$(find "$STAC_OUTPUT_DIR" -maxdepth 1 -type f -name "*.json" ! -name "collection.json" | wc -l | tr -d ' ')
@@ -542,6 +557,7 @@ jobs:
       - name: Commit refreshed caches
         if: >-
           always() && (steps.detect.outputs.changes == 'true' || steps.footprints.outputs.pending == 'true'
+          || steps.pairing.outputs.pending == 'true'
           || inputs.backfill || inputs.rename || inputs.footprint)
         env:
           JOB_STATUS: ${{ job.status }}
@@ -623,6 +639,17 @@ jobs:
             .venv/bin/python scripts/footprint_extract.py \
               --prune-changed "$STAC_OUTPUT_DIR" --changed-out data/urls_footprint_changed.txt
             git add data/urls_footprint_changed.txt
+          fi
+
+          # The pairing rebuild list is cumulative in the same way (#57): the
+          # new dem_dsm_pairs.csv commits whatever the run did, so the next
+          # run's diff will not list these URLs again. A URL leaves only when
+          # its staged item carries the current pairing (its dsm asset is the
+          # paired DSM, or it has none where the pairing has none), and only
+          # after the sync that uploaded it succeeded.
+          if [ "${{ steps.sync.outcome }}" = "success" ] && [ -s data/urls_pairing_changed.txt ]; then
+            .venv/bin/python scripts/dsm_pair.py --prune-changed "$STAC_OUTPUT_DIR"
+            git add data/urls_pairing_changed.txt
           fi
 
           if git diff --cached --quiet; then
