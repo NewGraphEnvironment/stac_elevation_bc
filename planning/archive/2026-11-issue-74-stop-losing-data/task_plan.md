@@ -110,9 +110,9 @@ One PR, two batches. The issue has no comments.
 
 ## Validation
 - [x] Tests pass
-- [ ] `/code-check` clean (once over the branch with `/code-check branch`)
-- [ ] PWF checkboxes match landed work
-- [ ] `/planning-archive` on completion
+- [x] `/code-check` clean (once over the branch with `/code-check branch`): 4 rounds, ended by enumeration (`review-verdict.md`)
+- [x] PWF checkboxes match landed work
+- [x] `/planning-archive` on completion
 
 How each change is proved:
 - #53: the regenerated report differs from main only in the reworded paragraph, and the pairs csv is byte-identical
