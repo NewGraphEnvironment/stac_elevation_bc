@@ -165,8 +165,10 @@ still pairs and surfaces as `convention=unknown`, rather than dropping a DSM.
 Never construct a sibling path: `/dem/` → `/dsm/` swapping resolves in 4 of 157
 mapsheet-years and is what produced the earlier finding that BC published no
 surface models. `dsm_groups.txt` is not redundant with `urls_dsm.txt` — without it
-a `.laz`-only delivery is indistinguishable from "no DSM was delivered", which
-would misreport 1,211 real tiles.
+a `.laz`-only `dsm/` is indistinguishable from "no `dsm/` directory", which would
+misreport 1,211 tiles as `no_dsm_dir`. Neither has a surface model: the `.laz` in
+those 11 deliveries' `dsm/` is an RGB-colourised copy of the same-tile point cloud,
+not surface points (#53, measured in stac_pointcloud_bc#1).
 
 **Validation layers:**
 1. **GeoTIFF validation** (`stac_geotiff_checks.csv`) - Validates source data quality

@@ -112,6 +112,25 @@ def test_laz_only_group_yields_zero_pairs_and_an_explicit_record():
     assert all(r["dsm_key"] == "" for r in result["rows"])
 
 
+def test_report_says_a_laz_only_dsm_dir_holds_no_surface_model():
+    """#53: those dsm/*.laz files are an RGB copy of the point cloud, not a DSM.
+
+    Measured in stac_pointcloud_bc#1: same bounds and points as the same-tile
+    pointcloud/*.laz, every return classed 1 and 2. The report once said these
+    deliveries "published the surface model as point cloud only", which sends
+    readers looking for surface points that are not there.
+    """
+    from dsm_pair import report_render
+    dem = fixture("lazonly_dem.txt")
+    dsm_dir_keys = fixture("lazonly_dsm_dir_keys.txt")
+    result = pairs_build(dem, [], groups_of(dsm_dir_keys))
+    report = report_render(summarize(result), result)
+
+    assert "RGB-colourised point cloud" in report
+    assert "no surface model" in report
+    assert "published the surface model" not in report
+
+
 def test_no_dsm_directory_is_distinct_from_a_laz_only_one():
     """"No dsm/ delivered" and "dsm/ holds only .laz" are different facts."""
     dem = fixture("lazonly_dem.txt")

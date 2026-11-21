@@ -200,10 +200,11 @@ Still ahead:
   — propagate objectstore removals to the catalog. The September run
   settled the open question — the deleted tiles did not reappear under
   new names, so they are deletions rather than a rename in flight.
-- **Surface models published as point cloud only** — 1,211 DEM tiles
-  across 11 mapsheet-years have a `dsm/` directory holding only `.laz`.
-  Recorded as a declared coverage gap in `data/dsm_pairing_report.md`;
-  deriving a raster from the point cloud is unscoped.
+- **No surface model for 11 deliveries** — 1,211 DEM tiles across 11
+  mapsheet-years have a `dsm/` directory holding only `.laz`, and that
+  `.laz` is an RGB-colourised copy of the same tile’s point cloud, not a
+  surface model. Recorded as a declared coverage gap in
+  `data/dsm_pairing_report.md`.
 - **CHM**
   ([\#29](https://github.com/NewGraphEnvironment/stac_elevation_bc/issues/29))
   — 264 canopy-height tiles are published province-wide, ~1.1% coverage

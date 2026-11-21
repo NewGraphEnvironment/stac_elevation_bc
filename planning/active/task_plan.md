@@ -50,10 +50,10 @@ One PR, two batches. The issue has no comments.
    down) still exits 1 before the sync.
 
 ## Phase 1: #53, correct the `no_raster_dsm` wording
-- [ ] Test in `tests/test_dsm_pair.py`: the rendered report names the `dsm/` contents as an RGB-colourised point cloud with no raster, and does not say a surface model was published
-- [ ] Reword `scripts/dsm_pair.py`: module docstring at :18-19, the comments at :51-53, :99-102, :120-125 and :141-144, and the report paragraph at :321-322. The new wording: those deliveries' `dsm/` holds an RGB-colourised point cloud and no raster, so no surface model exists for them
-- [ ] Regenerate `data/dsm_pairing_report.md` from the committed listings. Check that `dem_dsm_pairs.csv` is byte-identical afterwards and that only the reworded paragraph moved
-- [ ] Same correction in `CLAUDE.md` (the `dsm_groups.txt` line and the "`.laz`-only delivery" paragraph) and in `README.md:203-206`. #53 does not name the README, but it makes the same claim. Move 3 also edits the README, and only this bullet overlaps
+- [x] Test in `tests/test_dsm_pair.py`: the rendered report names the `dsm/` contents as an RGB-colourised point cloud with no raster, and does not say a surface model was published
+- [x] Reword `scripts/dsm_pair.py`: module docstring at :18-19, the comments at :51-53, :99-102, :120-125 and :141-144, and the report paragraph at :321-322. The new wording: those deliveries' `dsm/` holds an RGB-colourised point cloud and no raster, so no surface model exists for them
+- [x] Regenerate `data/dsm_pairing_report.md` from the committed listings. Check that `dem_dsm_pairs.csv` is byte-identical afterwards and that only the reworded paragraph moved
+- [x] Same correction in `CLAUDE.md` (the `dsm_groups.txt` line and the "`.laz`-only delivery" paragraph) and in `README.md:203-206` (with `README.Rmd` and the rendered `README.html`/`index.html` hand-edited the same way; no re-render, because the README runs live API chunks and move 3 owns the next render). #53 does not name the README, but it makes the same claim. Move 3 also edits the README, and only this bullet overlaps
 
 ## Phase 2: #57, make the pairing list cumulative and prunable (`scripts/dsm_pair.py`)
 - [ ] Tests first:

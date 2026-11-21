@@ -16,7 +16,8 @@ using a convention we have not seen still pairs, and shows up in the report as
 Every DEM lands in exactly one bucket:
   paired         - a DSM was found; the convention that relates the names is recorded
   no_raster_dsm  - the mapsheet-year's dsm/ directory holds no .tif at all
-                   (11 such deliveries publish the surface model as .laz only)
+                   (in 11 such deliveries it holds an RGB-colourised copy of
+                   the point cloud and no raster, so no surface model exists)
   no_dsm_dir     - the mapsheet-year has no dsm/ directory
   unpaired       - a raster DSM exists in the group but not for this tile
   unparseable    - no tile id could be parsed from the DEM name
@@ -49,8 +50,9 @@ logger = logging.getLogger(__name__)
 DEM_KEYS_FILE = "data/urls_list.txt"
 DSM_KEYS_FILE = "data/urls_dsm.txt"
 # Every mapsheet-year that has a dsm/ directory, whatever it holds. Separate
-# from the raster listing so a .laz-only delivery is a declared coverage gap
-# rather than looking identical to "no DSM was delivered".
+# from the raster listing so a .laz-only dsm/ (an RGB-colourised point cloud,
+# no surface model) is a declared coverage gap rather than looking identical
+# to "no dsm/ directory was delivered".
 DSM_GROUPS_FILE = "data/dsm_groups.txt"
 PAIRS_CSV = "data/dem_dsm_pairs.csv"
 REPORT_MD = "data/dsm_pairing_report.md"
@@ -98,7 +100,7 @@ def dsm_group_of(key: str) -> str | None:
 
     Used for keys whose FILENAME will not parse. The group still has a raster
     DSM, and losing it would push that mapsheet-year's DEM tiles into
-    `no_raster_dsm` -- reporting "published as point cloud only" for a delivery
+    `no_raster_dsm` -- reporting "no surface model exists" for a delivery
     that shipped rasters we simply could not name.
     """
     rel = key_relative(key)
@@ -117,12 +119,14 @@ def pairs_build(dem_keys: list[str], dsm_keys: list[str],
                 dsm_dir_groups: set[str]) -> dict:
     """Match DEM keys to DSM keys. Pure -- no I/O, no network.
 
-    `dsm_keys` holds only raster (.tif) DSM keys, so a delivery that published
-    its surface model as .laz produces no keys at all and is indistinguishable
-    from one that shipped no DSM. `dsm_dir_groups` is the separate input that
+    `dsm_keys` holds only raster (.tif) DSM keys, so a delivery whose `dsm/`
+    holds only .laz produces no keys at all and is indistinguishable from one
+    that has no `dsm/` directory. `dsm_dir_groups` is the separate input that
     tells those two apart: every mapsheet-year that has a `dsm/` directory,
     whatever it contains. Without it `no_raster_dsm` is unreachable and 1,211
-    real tiles would be misreported as having had no surface model delivered.
+    tiles would be misreported as `no_dsm_dir`. Neither kind has a surface
+    model: the .laz in those `dsm/` directories is an RGB-colourised copy of
+    the same-tile point cloud (#53).
 
     Returns a dict with `rows` (one per DEM key, always), `collisions`
     (DSM keys sharing a match key, which would make pairing ambiguous) and
@@ -140,7 +144,7 @@ def pairs_build(dem_keys: list[str], dsm_keys: list[str],
             # The group still holds a raster DSM even though this filename does
             # not parse, so it must stay in dsm_groups. Otherwise a group whose
             # rasters were all unnameable would report `no_raster_dsm` -- a
-            # declared "point cloud only" gap for a delivery that shipped
+            # declared "no surface model" gap for a delivery that shipped
             # rasters, which is the reclassification this design forbids.
             group = dsm_group_of(key)
             if group:
@@ -318,8 +322,9 @@ def report_render(summary: dict, result: dict) -> str:
     lines += [
         f"## Mapsheet-years with a `dsm/` directory but no raster ({len(groups)})",
         "",
-        "These deliveries published the surface model as point cloud only. This",
-        "is a declared coverage gap, not a pairing failure.",
+        "These deliveries' `dsm/` directory holds an RGB-colourised point cloud",
+        "and no raster, so no surface model exists for them. This is a declared",
+        "coverage gap, not a pairing failure.",
         "",
     ]
     lines += [f"- `{g}`" for g in groups] or ["- none"]
@@ -371,8 +376,8 @@ def report_render(summary: dict, result: dict) -> str:
         lines += [
             "These rasters exist but could not be named, so they pair with",
             "nothing. Their mapsheet-year still counts as having a raster DSM,",
-            "so its DEM tiles report as `unpaired` rather than as a point-cloud",
-            "-only coverage gap. Sample:",
+            "so its DEM tiles report as `unpaired` rather than as a",
+            "`no_raster_dsm` coverage gap. Sample:",
             "",
         ]
         lines += [f"- `{key_relative(k)}`" for k in dsm_unparse[:10]]
