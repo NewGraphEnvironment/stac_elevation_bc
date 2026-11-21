@@ -528,6 +528,7 @@ jobs:
           overwrite: true   # re-runs of failed jobs otherwise 409 on the existing artifact
           path: |
             logs/*.log
+            data/urls_new.txt
             data/urls_access_checks.csv
             data/backfill_done.txt
             data/backfill_errors.txt
@@ -593,9 +594,13 @@ jobs:
           # file detect_changes.R writes, and the next run re-detects the same
           # URLs. The other caches (validation, footprints) still commit: each
           # records a fact about a source, not that its item was published.
+          # The commit message says so, or a failed month's cache commit reads
+          # in the ledger exactly like a month that built its tiles.
+          WITHHELD=""
           if [ "$SYNC_OUTCOME" != "success" ] && [ "$JOB_STATUS" != "success" ]; then
             echo "run ended $JOB_STATUS with sync $SYNC_OUTCOME -" \
                  "restoring the detected listing so the next run re-detects it"
+            WITHHELD="; run $JOB_STATUS, listing withheld"
             for f in data/urls_list.txt data/urls_dsm.txt data/dsm_groups.txt \
                      data/urls_new.txt data/urls_deleted.txt; do
               git reset -q -- "$f" || true
@@ -624,7 +629,7 @@ jobs:
             echo "no cache changes to commit"
             exit 0
           fi
-          git commit -m "Monthly incremental update: refresh caches ($(date -u +%Y-%m))"
+          git commit -m "Monthly incremental update: refresh caches ($(date -u +%Y-%m)$WITHHELD)"
           git pull --rebase origin main
           git push origin HEAD:main
 
