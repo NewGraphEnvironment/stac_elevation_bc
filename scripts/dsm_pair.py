@@ -28,10 +28,11 @@ DEM input count, and the script asserts that before writing anything.
 The rebuild list (--changed-urls) is CUMULATIVE (#57). Each run adds the
 DEM URLs whose pairing changed, and a URL leaves the list only through
 --prune-changed, after a successful sync: when its staged item carries the
-current pairing, or when its DEM has left the listing. The workflow commits the new pairs csv even when the run
-fails, so the next run's diff against it comes out empty. A list rebuilt from
-"this run's diff" would therefore forget every change a failed run did not
-publish, and that item would never gain its dsm asset.
+current pairing, or when its DEM has left the listing. A run can fail after
+pairing and still commit; a list rebuilt from "this run's diff" then depends on
+the next run re-deriving the same diff, which fails whenever the pairs csv
+commits without its listing, or the next walk differs. The list keeps every
+change until its item is published, whatever happens between.
 
 Usage:
     python scripts/dsm_pair.py                    # write pairs csv + report

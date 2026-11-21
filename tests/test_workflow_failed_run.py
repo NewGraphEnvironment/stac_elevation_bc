@@ -97,7 +97,7 @@ def run_step(tmp_path, job_status, sync_outcome, untracked=(), deleted=(), origi
     outputs = detect_outputs()
     tracked = [f for f in outputs if f not in untracked] + [
         "data/stac_geotiff_checks.csv", "data/urls_footprint_changed.txt",
-        "data/urls_pairing_changed.txt"]
+        "data/urls_pairing_changed.txt", "data/dem_dsm_pairs.csv", "data/dsm_pairing_report.md"]
     for f in tracked:
         (work / f).write_text("" if f.endswith("_changed.txt") else "before\n")
     git(work, "add", "-A", env=env)
@@ -112,8 +112,10 @@ def run_step(tmp_path, job_status, sync_outcome, untracked=(), deleted=(), origi
         git(other, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "other", env=env)
         git(other, "push", "-q", "origin", "main", env=env)
 
-    # What a run leaves behind: detect rewrote its outputs, validation its cache.
-    for f in outputs + ["data/stac_geotiff_checks.csv"]:
+    # What a run leaves behind: detect rewrote its outputs, validation its cache,
+    # the pairing step its csv and report.
+    for f in outputs + ["data/stac_geotiff_checks.csv", "data/dem_dsm_pairs.csv",
+                        "data/dsm_pairing_report.md"]:
         if f in deleted:
             (work / f).unlink()
         else:
@@ -134,7 +136,9 @@ def run_step(tmp_path, job_status, sync_outcome, untracked=(), deleted=(), origi
                            env=env, capture_output=True, text=True)
         return p.stdout if p.returncode == 0 else None
     files = {f: on_origin(f) for f in outputs + ["data/stac_geotiff_checks.csv",
-                                                 "data/urls_pairing_changed.txt"]}
+                                                 "data/urls_pairing_changed.txt",
+                                                 "data/dem_dsm_pairs.csv",
+                                                 "data/dsm_pairing_report.md"]}
     files["message"] = git(origin, "log", "-1", "--format=%s", "main", env=env).strip()
     files["README"] = on_origin("README")
     return files
@@ -150,6 +154,9 @@ def test_a_failed_or_cancelled_run_does_not_commit_its_listing(tmp_path, job_sta
     origin = run_step(tmp_path, job_status, sync_outcome)
     for f in detect_outputs():
         assert origin[f] == "before\n", f"{f} was committed by a {job_status} run"
+    # Derived from the listing, so withheld with it (code-check round 3, #57).
+    for f in ("data/dem_dsm_pairs.csv", "data/dsm_pairing_report.md"):
+        assert origin[f] == "before\n", f"{f} was committed without its listing"
     # The restore is of the listing only: other caches still persist.
     assert origin["data/stac_geotiff_checks.csv"] == "after\n"
     assert origin["message"].endswith(f"; run {job_status}, listing withheld)"), origin["message"]
@@ -162,7 +169,7 @@ def test_a_failed_or_cancelled_run_does_not_commit_its_listing(tmp_path, job_sta
 ])
 def test_a_run_that_published_or_needed_no_sync_commits_its_listing(tmp_path, job_status, sync_outcome):
     origin = run_step(tmp_path, job_status, sync_outcome)
-    for f in detect_outputs():
+    for f in detect_outputs() + ["data/dem_dsm_pairs.csv", "data/dsm_pairing_report.md"]:
         assert origin[f] == "after\n", f"{f} was not committed ({job_status}, sync {sync_outcome})"
     assert "withheld" not in origin["message"], origin["message"]
 
