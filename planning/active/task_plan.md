@@ -38,7 +38,7 @@ still say a failed run persists nothing.
 
 ## Phase 1: Tests first (red)
 
-- [ ] `tests/test_workflow_failed_run.py`: a behavioural harness that extracts the
+- [x] `tests/test_workflow_failed_run.py`: a behavioural harness that extracts the
       `Commit refreshed caches` step's `run:` text from `update.yml`, substitutes the
       `${{ }}` expressions (job status, sync outcome), and runs it with bash in a scratch
       git repo whose `origin` is a local bare repo, with every detect output rewritten.
@@ -49,10 +49,10 @@ still say a failed run persists nothing.
       - success + sync success → committed
       - failure + sync success (upload-artifact failed after publishing) → committed
       - a non-listing cache (e.g. `stac_geotiff_checks.csv`) is committed in every case
-- [ ] A static pin in the style of `tests/test_workflow_rewrites.py`: every detect output
+- [x] A static pin in the style of `tests/test_workflow_rewrites.py`: every detect output
       named in the restore list (the list read from `detect_changes.R`'s header
       `Outputs:`/`Updates:` lines, so a new output fails the test)
-- [ ] Run: the new tests fail on `main`'s workflow
+- [x] Run: the new tests fail on `main`'s workflow
 
 ## Phase 2: The fix
 
