@@ -67,12 +67,12 @@ still say a failed run persists nothing.
 
 ## Phase 3: Docs
 
-- [ ] `scripts/README.md:209` and `:214`: replace "persists nothing" / "nothing was committed"
+- [x] `scripts/README.md:209` and `:214`: replace "persists nothing" / "nothing was committed"
       with the actual model (caches are committed, the listing is not, so the next run
       re-detects)
-- [ ] `scripts/README.md` "Oversized batches" bullet: its "the run commits nothing, so it
+- [x] `scripts/README.md` "Oversized batches" bullet: its "the run commits nothing, so it
       repeats identically" becomes true again only via the listing restore; reword to say so
-- [ ] grep `CLAUDE.md`, `README.md`, `scripts/` for other "re-detect"/"persists nothing"
+- [x] grep `CLAUDE.md`, `README.md`, `scripts/` for other "re-detect"/"persists nothing"
       restatements (archived `planning/` is history and stays)
 
 ## Validation
