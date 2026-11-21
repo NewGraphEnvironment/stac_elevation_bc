@@ -2247,6 +2247,9 @@ Take a segment's top from the next segment's `downstream_route_measure`, and com
 ### FWA main flow is not edge type 1000 alone
 Select main flow with `edge_type IN (1000, 1050, 1200, 1250, 1450)`, and test what the layer is for rather than that it is non-empty.
 
+### FWA lookup area follows watershed codes, so side channels get the river's
+Never take a side channel's area (edge type 1100, 1150, 1300 or 1350) from `fwa_streams_watersheds_lut`, and check a mouth segment's polygon has its own `wscode_ltree`.
+
 ### terra: `focal(na.rm = TRUE)` drops NA cells from the vote, so where you fill NA around a filter changes its output
 Fill NA with the value you mean (`ifel(is.na(x), 0L, x)`) **before** a `focal()` majority or min/max filter, not after it, whenever those cells should count.
 
@@ -2403,7 +2406,7 @@ For non-trivial issue-driven work, follow this checklist. Each step exists for a
 3. **Name with intent** — functions, parameters, internal helpers carry the naming style of the package they live in. Look at existing exports as the guide; consistency over cleverness. For files rather than functions — shell scripts and operational R scripts under `scripts/` or `data-raw/` — the standard is the `noun_verb-detail` pattern in `newgraph.md`, noun first.
 4. **Examples that run** — every exported function gets a runnable `@examples` block. Pkgdown renders them; CI executes them. An example that doesn't run is documentation rot.
 5. **Code-check before it merges** — `/code-check` on the staged diff before each commit, or `/code-check branch` once over the branch before the PR ("When to Skip" below). Catches what tests miss: edge cases, hard-coded paths, unguarded variables, security issues.
-6. **Atomic commits** — each commit bundles code change + checkbox flip in `task_plan.md`. The diff and the progress live in the same commit; `git log -- planning/` tells the full story.
+6. **Atomic commits** — each commit bundles code change + checkbox flip in `task_plan.md`. The diff and the progress live in the same commit, a tick or review file with no code riding in the next one; `git log -- planning/` tells the full story.
 7. **`/planning-archive` when complete** — moves PWF to `archive/YYYY-MM-issue-N-slug/`, creates a fresh `active/`. Then `/gh-pr-push` opens the PR; `/gh-pr-merge` handles the release bookkeeping.
 
 ## Where the checkpoints are not
@@ -2735,7 +2738,7 @@ Skip planning for single-file edits, quick fixes, or tasks with obvious next ste
 2. **Plan to files** — Write the plan into 3 files in `planning/active/`:
    - `task_plan.md` — Phases with checkbox tasks
    - `findings.md` — Research, discoveries, technical analysis
-   - `progress.md` — Session log with timestamps and commit refs
+   - `progress.md` — One entry per phase, with commit refs
 3. **Plan-review with the Plan agent — concurrently, not as a gate** — Once `task_plan.md` is scaffolded, spawn the Plan subagent (`Agent({subagent_type: "Plan", prompt: "..."}`) and ask it to critically review the task_plan against the issue body + actual codebase. Categorize findings as Blocker / Gap / Ordering / Assumption / Scope / Acceptance. The agent reads files fresh — it catches what you miss when you've been thinking about the design too long.
 
    **Do not wait for it.** Spawn, then start the lowest-risk phase. Background agents have repeatedly returned late — in one case after the entire issue had shipped — so treating the review as a precondition stalls the work for as long as the agent takes (see `agent-operations.md` §2). Fold findings in whenever they land: pre-baseline they edit the plan; mid-implementation they become follow-up commits — unless the finding is a stored-data fork of the kind `agent-operations.md` §4 reserves for the user. If you genuinely cannot proceed without the result, run it with `run_in_background: false` so the blocking is explicit.
@@ -2786,17 +2789,18 @@ Skip planning for single-file edits, quick fixes, or tasks with obvious next ste
    enumeration of the candidate set showing nothing sits above its source of truth**
    (`code-check.md`, "A guard's scope, escape hatches, and remedies"), a mutation table for
    the guards a fix introduced. `/code-check` treats three rounds as the floor and keeps
-   going while a round finds a defect inside the previous fix.
+   going while a round finds a defect inside the previous fix. In prose, where each round
+   rewords the last fix, cut back to the verified claims and end on a claim-by-evidence list.
 
    Ask for the **mechanism**, not more instances, such as an invariant enforced by two lists happening to agree.
 
    The thing reviewers catch that self-probing does not is **interop**. Ask the consumer.
 
-*35 lines of evidence for this rule are in `conventions/planning.md`.*
+*39 lines of evidence for this rule are in `conventions/planning.md`.*
 
 4. **Lock naming before the baseline** — If naming feedback surfaces during planning (legacy filename, inconsistency with an existing file family), fold the rename into the convention + task_plan BEFORE the baseline commit, not as a follow-up. Pre-baseline it's free; retrofitting after implementation cascades (measured: `build_exec_pdf.R` → `run_pagedown_exec_summary.R` locked in pre-baseline meant zero downstream rework).
 5. **Commit the plan** — After Plan-agent review + fixes. This is the baseline.
-6. **Work in atomic commits** — Each commit bundles code changes WITH checkbox updates in the planning files. The diff shows both what was done and the checkbox marking it done.
+6. **Work in atomic commits** — Each commit bundles code changes WITH their checkbox flips; bookkeeping rides with a neighbour (Atomic Commits, below).
 7. **Code check before commit** — Run `/code-check` on staged diffs before committing, or once over the branch with `/code-check branch` before the PR (`feature-workflow.md`, "When to Skip"). Per commit, don't mark a task done until its diff passes review. In branch mode each commit still carries its own checkbox flip (Atomic Commits, below), the Validation box for `/code-check` is the one that waits for the branch review, and its fixes land as follow-up commits.
 8. **Archive when complete** — Move `planning/active/` to `planning/archive/` via `/planning-archive`. Write a README.md in the archive directory with a one-paragraph outcome summary and closing commit/PR ref — future sessions scan these to catch up fast. Where the work produced measurements, that README is also the evidence record; see below.
 
@@ -2862,12 +2866,14 @@ Configuration blocks — that is the archive README's `Measurement` and `Evidenc
 the raw numbers (committed logs). A living document revised as knowledge moves is the shape
 that moves the state of knowledge; a dated run record duplicates the archive.
 
-*5 lines of evidence for this rule are in `conventions/planning.md`.*
+*7 lines of evidence for this rule are in `conventions/planning.md`.*
 
 ### One topic file, revised in place — git is the version record
 
-`research/<topic>.md`, noun-first, **no date in the filename**. A new measurement that
-changes what is known revises the topic file; it does not add a dated sibling.
+`research/<topic>.md`, noun-first, **no date in the filename**. A finding revises the statement
+it changes and deletes what it supersedes ("until #N, X" only where a reader needs it), adding
+no dated sibling and no section per issue. soul's `research_check.sh` flags a file grown into a log
+or gone stale; `/backlog-sweep` proposes the fix.
 `git log --follow research/<topic>.md` is the dated history, the archive README it cites
 is the *why*, and the logs are the numbers — everything an R&D claim needs, with no second
 copy of any of it.
@@ -2934,12 +2940,12 @@ public: report findings from internal work aggregated, never by the names of who
 
 ## Atomic Commits (Critical)
 
-Every commit that completes a planned task MUST include:
-- The code/script changes
-- The checkbox update in `task_plan.md` (`- [ ]` -> `- [x]`)
-- A progress entry in `progress.md` if meaningful
-
-This creates a git audit trail where `git log -- planning/` tells the full story. Each commit is self-documenting — you can backtrack with git and understand everything that happened.
+A commit that completes a planned task carries its code and its checkbox flip in `task_plan.md`,
+so `git log -- planning/` tells the full story. Bookkeeping rides with a neighbour: a box ticked
+with no code goes in the next code commit or the archive, a review round's file in the commit
+fixing its findings (after a clean round, the next commit). Only the baseline, the archive,
+`/compact-prep`'s session entry and `/planning-update` commit alone. `progress.md` gets one entry
+per phase.
 
 ## File Formats
 
@@ -2980,12 +2986,12 @@ Append-only research log. Discoveries, technical analysis, things learned.
 
 ### progress.md
 
-Session entries with commit references.
+One entry per phase, with commit references.
 
 ```markdown
 # Progress
 
-## Session YYYY-MM-DD
+## Phase N, YYYY-MM-DD
 - Completed: [items]
 - Commits: [refs]
 - Next: [items]
