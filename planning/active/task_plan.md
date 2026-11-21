@@ -95,9 +95,9 @@ One PR, two batches. The issue has no comments.
 - [x] `item_create.load_validation_cache`: when a `needs_upgrade` URL's re-read comes back `is_geotiff False`, put its old row back. Log each such URL with a count
 
 ## Phase 5: #56, report what `--urls-file` dropped and gate on it
-- [ ] Test: on the `--urls-file` path, `main()` logs every URL `process_item` returned `None` for. It exits 0 within `error_tolerable` measured against the catalogue, and exits 1 above it
-- [ ] Implement it in `item_create.main`. `--incremental` keeps today's exit behaviour. Its shortfall is already warned by the `Count new items` step, and is out of scope for #56
-- [ ] item_create prints the `::warning` line itself, with the dropped count, so it is visible on a green run (review Gap 8). A population of 0 falls back to the list length and is logged
+- [x] Test: on the `--urls-file` path, `main()` logs every URL `process_item` returned `None` for. It exits 0 within `error_tolerable` measured against the catalogue, and exits 1 above it
+- [x] Implement it in `item_create.main`. `--incremental` keeps today's exit behaviour. Its shortfall is already warned by the `Count new items` step, and is out of scope for #56
+- [x] item_create prints the `::warning` line itself, with the dropped count, so it is visible on a green run (review Gap 8). A population of 0 falls back to the list length and is logged
 
 ## Phase 6: docs and close-out
 - [ ] `CLAUDE.md`: add `urls_pairing_changed.txt` to the `data/` tree as a cumulative list pruned after sync. Note the read retry and that a good validation row is never downgraded

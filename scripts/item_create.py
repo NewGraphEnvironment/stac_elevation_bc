@@ -29,6 +29,7 @@ from tqdm import tqdm
 
 from dsm_pair import dsm_lookup_load
 from item_fields import footprints_load, has_footprint, pystac_item_fields_apply
+from item_rewrite import ERROR_ABS_MAX, ERROR_RATE_MAX, error_tolerable
 from stac_utils import (
     ASSET_DEM,
     ASSET_DSM,
@@ -265,6 +266,39 @@ def load_validation_cache(urls_to_check: list[str]) -> dict:
     return result
 
 
+def drops_judge(dropped: list[str], processed: int, population: int) -> int:
+    """Name every URL a --urls-file rebuild dropped, and gate on how many. Returns an exit code.
+
+    A rebuild drops a URL it could not build (process_item returned None), and
+    exited 0 regardless, so a drop was silent (#56). Every drop is now logged
+    by URL and annotated on the run.
+
+    The gate is item_rewrite.error_tolerable, measured against the published
+    catalogue (`population`), not this run's list: the rebuild lists are
+    cumulative, so a tile that can never be read stays on them, and against a
+    short list that one tile would fail every month, skip every sync and hold
+    back every month's new items. Against the catalogue it is what it is: one
+    tile in ~100k. A population of 0 (a collection with no item links) falls
+    back to the list's own length, and says so.
+    """
+    if not dropped:
+        return 0
+    for url in dropped:
+        logger.warning("Dropped from rebuild (not built): %s", url)
+    print(f"::warning title=Rebuild dropped items::{len(dropped)} of {processed} listed "
+          f"URLs were not built; each is named in the log", flush=True)
+    if population <= 0:
+        logger.warning("Collection has no item links - judging the drop rate against "
+                       "the %d listed URLs", processed)
+    if error_tolerable(len(dropped), processed, population):
+        logger.warning("%d dropped: within tolerance (%.2f%% / %d of %d)", len(dropped),
+                       100 * ERROR_RATE_MAX, ERROR_ABS_MAX, population or processed)
+        return 0
+    logger.error("%d dropped: ABOVE tolerance (%.2f%% / %d of %d) - failing the run",
+                 len(dropped), 100 * ERROR_RATE_MAX, ERROR_ABS_MAX, population or processed)
+    return 1
+
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -339,6 +373,7 @@ def main():
     elif args.incremental or args.urls_file:
         existing_item_count = len([l for l in collection.links if l.rel == 'item'])
         logger.info("Appending to %d existing items", existing_item_count)
+    published = len([l for l in collection.links if l.rel == 'item'])
 
     # Pre-validation
     results_lookup = load_validation_cache(urls_to_check)
@@ -399,6 +434,10 @@ def main():
     collection.save_object(dest_href=path_collection)
     logger.info("Collection saved to %s", path_collection)
 
+    if args.urls_file:
+        built = {r["id"] for r in results}
+        dropped = [u for u in urls_to_check if url_to_item_id(u) not in built]
+        return drops_judge(dropped, len(urls_to_check), published)
     return 0
 
 

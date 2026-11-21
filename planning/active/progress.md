@@ -39,3 +39,8 @@
 - Filed #80: a new URL whose every read fails is still recorded False and never retried (review Scope 1).
 - Tests: new `tests/test_item_create.py` (6 tests, no network, the cache in tmp_path). Mutations: `READ_ATTEMPTS = 1` fails 2 tests, and disabling the keep fails 3. Full suite: 345 passed.
 - Next: Phase 5
+
+## Phase 5, 2026-11-21
+- Completed: `item_create.drops_judge()`. On the `--urls-file` path, every URL `process_item` did not build is logged by URL, and a `::warning title=Rebuild dropped items::` line is printed. The exit code is `item_rewrite.error_tolerable(dropped, listed, population=<item links in the collection>)`, and a population of 0 falls back to the list and is logged. `--incremental` keeps exit 0.
+- Tests: 4 new `main()` tests (offline, tmp collection): a drop within tolerance is named with exit 0, a drop past tolerance exits 1, a short list is judged against the catalogue, and incremental is unchanged. A mutation to the list's own denominator fails 2 of them. Full suite: 349 passed.
+- Next: Phase 6
