@@ -2617,7 +2617,8 @@ behaviour **in terms of the package's own inputs and conditions**. Our machines,
 ports, local env files and private repos stay out, with the two exceptions below. Check
 where the text lands before you draft it, naming the destination: with no argument, `gh`
 reports the repo the session stands in, which reads private when you file from a private
-repo into a public one.
+repo into a public one. A `pre-public` repo (`.claude/visibility`) is held to it from its
+first commit.
 
 ```bash
 gh repo view <owner>/<repo> --json nameWithOwner,visibility --jq '"\(.nameWithOwner): \(.visibility)"'
