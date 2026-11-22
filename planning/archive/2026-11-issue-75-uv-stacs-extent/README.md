@@ -35,4 +35,9 @@ URL left the listing in 815d8f6) predates every date in today's listing (2012-01
 - Close #16 (note stac_uav_bc remains, per its scope table), #62, #70 (note the undated
   `albers10k2m` items stay outside the extent, at their placeholder date)
 
-Closed by: PR (opened next, from branch `75-backlog-move-2-uv-a-stacs-bump-and-the-c`)
+All three done 2026-11-21: `collection.json` uploaded (S3 version `WlRr4YkApsc_v8T8QOk18cqLpt6fXiHH`, replacing
+`_DYXjLspnghYn6hVYAjt29R9jXSCfRC1`); `stacs register --mode drift` loaded the collection and the queryable,
+0 items, in about 18 min (`logs/20261121_233613_register_drift_75.log`); `stacs verify` IN SYNC
+(`logs/*_verify_75.log`); #16, #62 and #70 closed.
+
+Closed by: PR #82 (merge `9d990b9`)
