@@ -297,7 +297,8 @@ Hazards in the registration path:
   drift run rather than letting it loop monthly. Items are served *hydrated*
   against the collection (its `item_assets` and `stac_version`), so a collection
   upsert can change how untouched items read. That is why `--mode all` and a drift
-  whose collection changed re-compare the whole catalogue after writing.
+  whose collection changed re-compare the whole catalogue after writing. Measured 2026-11-21 (#75): such a drift took
+  about 18 min end to end over 102,460 items, and a `stacs verify` after it about 13 min.
 - `data/dem_dsm_pairs.csv` and the item JSONs are large enough that concatenation
   must use `find -exec cat {} +`, never a glob — see the ARG_MAX entry in the
   code-check conventions below.
