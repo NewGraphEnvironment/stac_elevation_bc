@@ -1772,6 +1772,12 @@ Write a JSON object with an empty key as text, not through `toJSON()`.
 ### Probing a TMB objective can break `vcov()` on the fit
 Compute `vcov()` and `SE()` before probing a TMB objective, or save and restore `env$last.par.best` and `env$value.best` around the probe.
 
+### Numeric routines that err at their edge, and `round()`
+`besselI(x, nu, expon.scaled = TRUE)` returns 0 with no warning for large `x`.
+
+### knitr and pandoc rewrite a caption: `fig.cap` is evaluated late, and `alt` copies it
+Set `fig.alt` from a call, not from the caption's value.
+
 # Code Check — Shell
 Tool-level traps in bash, sed, git and `gh`, and in the host toolchain those commands depend on.
 
@@ -1856,7 +1862,7 @@ Wait on the PIDs you started (`wait "$pid"`), because a bare `wait` also blocks 
 Inside the branch, `$?` is the status of the `!` compound — which is **0 by construction**, because the negation succeeded.
 
 ### A `pgrep -f` waiter matches a waiter's command line, so it never exits
-Wait on a PID with `while kill -0 "$PID"; do sleep 30; done`, never on `pgrep -f "job"`, whose pattern matches a waiting loop's command line so it never exits.
+Wait on a PID with `while ps -p "$PID" >/dev/null 2>&1; do sleep 30; done`, never on `pgrep -f "job"`, whose pattern matches a waiting loop's command line so it never exits.
 
 ### `timeout` is GNU coreutils — a portable deadline
 An assertion around something that might hang can only pass or hang, never fail (`code-check.md`, "Restore the bug and prove the guard fires").
@@ -1995,6 +2001,12 @@ Give each setup step its own `|| exit 1` and branch with `if`.
 
 ### An Actions `run:` step with no `shell:` has no `pipefail`
 Set `defaults: run: shell: bash` on the job, since a Linux step with no `shell:` runs `bash -e {0}`.
+
+### `git mv -k` on an untracked file exits 0 and moves nothing
+Rename an untracked file with `mv` and a tracked one with `git mv` without `-k`, then check the new path exists.
+
+### `pipefail` fails `cmd | head -N | grep -q` on SIGPIPE
+Capture the output first (`out=$(cmd 2>&1)`) and test the variable, or run the probe without `pipefail`.
 
 # Code Check — Spatial
 terra, sf, bcdata, GDAL/OGR CLIs.
@@ -2289,6 +2301,12 @@ Before calling two DEMs the same surface, regress their difference on the refere
 ### A nodata value written to PNG comes back from magick as alpha
 Read a PNG that terra or GDAL wrote with `magick::image_convert(magick::image_read(f), matte = FALSE)`: their nodata becomes a tRNS chunk, which magick reads as alpha.
 
+### An ogr2ogr load's column order depends on whether it was the database's first
+Set a loaded table's column order yourself when anything hashes its rows: the first load into a database puts the geometry last, every later one second.
+
+### Headless Chrome's `--screenshot` captures a MapLibre map before it draws
+Capture a mapgl or MapLibre page after a real wait (`chromote`, `Sys.sleep(15)`), never with Chrome's `--screenshot --virtual-time-budget`.
+
 # Code Check Conventions
 Structured checklist for reviewing diffs before commit.
 
@@ -2456,10 +2474,10 @@ Before opening a PR, and again before merging:
 ```bash
 git fetch -q origin
 git log --oneline HEAD..origin/main          # what landed while you worked
-git diff origin/main -- DESCRIPTION NEWS.md  # a version you did not bump
+git diff origin/main -- DESCRIPTION NEWS.md  # a NEWS bullet you did not write
 ```
 
-**A version bump you did not make is the tell**, and usually the only one — the tree is
+**A release you did not make is the tell**, and usually the only one — the tree is
 clean, the branch is healthy, and nothing in git hints that someone solved your problem
 an hour ago.
 
